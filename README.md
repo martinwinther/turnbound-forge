@@ -1,22 +1,32 @@
 # Turnbound Forge
 
-A Turnbound build planner with a 7×7 grid and tetromino tiles. Plan your builds, place tiles, and share layouts with others.
+A Turnbound build planner with a 7×7 grid and polyomino tiles. Plan your builds, unlock cells, and share layouts.
+
+## Getting Started
+
+Install dependencies and run the dev server:
+
+```bash
+npm install
+npm run dev
+```
+
+Visit [http://localhost:3000](http://localhost:3000) and open the planner at `/planner`.
 
 ## Planned Features
 
 - Grid planner (7×7)
-- Tetromino tiles
-- Rotation
+- Polyomino tiles with rotation
 - Unlock-anywhere
 - Trinket slots
 - Weapon cap validation
 - Shareable URLs
 
-## Tech Stack (planned)
+## Tech Stack
 
-- Next.js
+- Next.js (App Router)
 - TypeScript
-- Tailwind
+- Tailwind CSS
 - Zustand
 
 ## Status

@@ -1,0 +1,48 @@
+[
+  {
+    "id": "hero-ember",
+    "name": "Ember",
+    "category": "hero",
+    "tags": ["starter", "fire"],
+    "shape": { "cells": [[0, 0], [1, 0], [0, 1], [1, 1]], "pivot": [0, 0], "rotatable": false },
+    "rulesText": "Hero start tile for demo builds.",
+    "icon": "/icons/placeholder.png",
+    "isUnique": true
+  },
+  {
+    "id": "weapon-arcblade",
+    "name": "Arcblade",
+    "category": "weapon",
+    "tags": ["melee", "lightning"],
+    "shape": { "cells": [[0, 0], [1, 0], [2, 0], [2, 1]], "pivot": [1, 0], "rotatable": true },
+    "rulesText": "Basic weapon to test weapon cap rules.",
+    "icon": "/icons/placeholder.png"
+  },
+  {
+    "id": "armor-bastion-plate",
+    "name": "Bastion Plate",
+    "category": "armor",
+    "tags": ["taunt", "defense"],
+    "shape": { "cells": [[0, 0], [0, 1], [1, 1], [2, 1]], "pivot": [0, 1], "rotatable": true },
+    "rulesText": "Taunt armor with a bulky footprint.",
+    "icon": "/icons/placeholder.png"
+  },
+  {
+    "id": "accessory-auric-charm",
+    "name": "Auric Charm",
+    "category": "accessory",
+    "tags": ["aura", "support"],
+    "shape": { "cells": [[0, 0], [1, 0], [1, 1]], "pivot": [0, 0], "rotatable": true },
+    "rulesText": "Accessory with a simple L shape.",
+    "icon": "/icons/placeholder.png"
+  },
+  {
+    "id": "consumable-repair-kit",
+    "name": "Repair Kit",
+    "category": "consumable",
+    "tags": ["utility"],
+    "shape": { "cells": [[0, 0], [0, 1]], "pivot": [0, 0], "rotatable": true },
+    "rulesText": "Small consumable for quick tests.",
+    "icon": "/icons/placeholder.png"
+  }
+]

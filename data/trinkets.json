@@ -1,0 +1,21 @@
+[
+  {
+    "id": "trinket-armory-signet",
+    "name": "Armory Signet",
+    "category": "trinket",
+    "tags": ["weapon-cap", "full-size"],
+    "shape": { "cells": [[0, 0]], "pivot": [0, 0], "rotatable": false },
+    "rulesText": "Increases weapon cap by 1.",
+    "icon": "/icons/placeholder.png",
+    "isUnique": true
+  },
+  {
+    "id": "trinket-split-coin",
+    "name": "Split Coin",
+    "category": "trinket",
+    "tags": ["half-size", "economy"],
+    "shape": { "cells": [[0, 0]], "pivot": [0, 0], "rotatable": false },
+    "rulesText": "Half-size trinket for slot sharing.",
+    "icon": "/icons/placeholder.png"
+  }
+]
