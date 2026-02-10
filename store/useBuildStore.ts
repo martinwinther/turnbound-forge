@@ -1,23 +1,67 @@
 import { create } from "zustand";
 
 import { getStartUnlockedIndices } from "@/lib/grid";
+import type { BuildStateV1, Rotation } from "@/lib/types";
 
 type BuildMode = "build" | "unlock";
+type RotationDirection = "cw" | "ccw";
+type PlacedTile = BuildStateV1["placed"][number];
 
 type BuildState = {
   unlocked: number[];
-  placed: [];
+  placed: BuildStateV1["placed"];
+  selectedInstanceId: string | null;
   mode: BuildMode;
   setMode: (mode: BuildMode) => void;
   toggleUnlocked: (index: number) => void;
   resetUnlockedToStart: () => void;
+  addPlaced: (itemId: string, x: number, y: number, rot?: Rotation) => void;
+  removePlaced: (instanceId: string) => void;
+  select: (instanceId: string | null) => void;
+  rotateSelected: (direction: RotationDirection) => void;
+  setPlacedPosition: (instanceId: string, x: number, y: number) => void;
 };
 
 const startUnlocked = getStartUnlockedIndices();
+const rotations: Rotation[] = [0, 90, 180, 270];
+
+const createInstanceId = (): string => {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `instance-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const rotate = (current: Rotation, direction: RotationDirection): Rotation => {
+  const currentIndex = rotations.indexOf(current);
+  if (currentIndex < 0) {
+    return 0;
+  }
+
+  const offset = direction === "cw" ? 1 : -1;
+  const nextIndex = (currentIndex + offset + rotations.length) % rotations.length;
+  return rotations[nextIndex];
+};
+
+const updatePlacedTile = (
+  placed: BuildStateV1["placed"],
+  instanceId: string,
+  updater: (tile: PlacedTile) => PlacedTile,
+) => {
+  return placed.map((tile) => {
+    if (tile.instanceId !== instanceId) {
+      return tile;
+    }
+
+    return updater(tile);
+  });
+};
 
 export const useBuildStore = create<BuildState>((set, get) => ({
   unlocked: startUnlocked,
   placed: [],
+  selectedInstanceId: null,
   mode: "build",
   setMode: (mode) => set({ mode }),
   toggleUnlocked: (index) => {
@@ -33,4 +77,48 @@ export const useBuildStore = create<BuildState>((set, get) => ({
     });
   },
   resetUnlockedToStart: () => set({ unlocked: startUnlocked }),
+  addPlaced: (itemId, x, y, rot = 0) => {
+    const tile: PlacedTile = {
+      instanceId: createInstanceId(),
+      itemId,
+      x,
+      y,
+      rot,
+    };
+
+    set((state) => ({
+      placed: [...state.placed, tile],
+      selectedInstanceId: tile.instanceId,
+    }));
+  },
+  removePlaced: (instanceId) => {
+    set((state) => ({
+      placed: state.placed.filter((tile) => tile.instanceId !== instanceId),
+      selectedInstanceId:
+        state.selectedInstanceId === instanceId ? null : state.selectedInstanceId,
+    }));
+  },
+  select: (instanceId) => set({ selectedInstanceId: instanceId }),
+  rotateSelected: (direction) => {
+    const selectedInstanceId = get().selectedInstanceId;
+    if (!selectedInstanceId) {
+      return;
+    }
+
+    set((state) => ({
+      placed: updatePlacedTile(state.placed, selectedInstanceId, (tile) => ({
+        ...tile,
+        rot: rotate(tile.rot, direction),
+      })),
+    }));
+  },
+  setPlacedPosition: (instanceId, x, y) => {
+    set((state) => ({
+      placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
+        ...tile,
+        x,
+        y,
+      })),
+    }));
+  },
 }));
