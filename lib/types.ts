@@ -6,6 +6,15 @@ export type ItemCategory =
   | "consumable"
   | "trinket";
 
+export const ITEM_CATEGORIES: ItemCategory[] = [
+  "hero",
+  "weapon",
+  "armor",
+  "accessory",
+  "consumable",
+  "trinket",
+];
+
 export type Rotation = 0 | 90 | 180 | 270;
 
 export type Point = {

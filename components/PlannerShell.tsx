@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Board } from "@/components/Board";
+import { ItemLibrary } from "@/components/ItemLibrary";
 import { items } from "@/lib/data";
 import { HERO_START } from "@/lib/grid";
 import { useBuildStore } from "@/store/useBuildStore";
@@ -11,7 +12,9 @@ const modeButtonBase =
   "rounded-md border px-4 py-2 text-sm font-semibold transition";
 
 export const PlannerShell = () => {
-  const [selectedItemId, setSelectedItemId] = useState<string>(items[0]?.id ?? "");
+  const [pickedItemId, setPickedItemId] = useState<string | null>(
+    items[0]?.id ?? null,
+  );
   const mode = useBuildStore((state) => state.mode);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
   const setMode = useBuildStore((state) => state.setMode);
@@ -66,32 +69,30 @@ export const PlannerShell = () => {
         </header>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
-          <aside className="rounded-xl border border-dashed border-zinc-300 bg-white p-4 text-sm text-zinc-500">
-            Item Library (coming soon)
-
+          <aside className="flex min-h-[320px] flex-col rounded-xl border border-zinc-200 bg-white p-4">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-800">
+              Item Library
+            </h2>
+            <ItemLibrary
+              onPick={setPickedItemId}
+              selectedItemId={pickedItemId}
+              mode="full"
+            />
             {isDevelopment ? (
               <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-600">
                   Dev Tools
                 </div>
-                <label className="mb-2 block text-xs font-medium text-zinc-700">
-                  Item
-                </label>
-                <select
-                  value={selectedItemId}
-                  onChange={(event) => setSelectedItemId(event.target.value)}
-                  className="mb-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-700"
-                >
-                  {items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => addPlaced(selectedItemId, HERO_START.x + 1, HERO_START.y)}
+                    onClick={() =>
+                      addPlaced(
+                        pickedItemId ?? items[0]?.id ?? "",
+                        HERO_START.x + 1,
+                        HERO_START.y,
+                      )
+                    }
                     className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"
                   >
                     Add Tile
