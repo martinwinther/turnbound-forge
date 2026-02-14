@@ -6,6 +6,7 @@ import { itemsById } from "@/lib/data";
 import { HERO_START, GRID_H, GRID_W, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
+import type { ValidationIssue } from "@/lib/validate";
 
 const getCellLabel = (isHero: boolean, isUnlocked: boolean) => {
   if (isHero) {
@@ -14,13 +15,36 @@ const getCellLabel = (isHero: boolean, isUnlocked: boolean) => {
   return isUnlocked ? "Unlocked cell" : "Locked cell";
 };
 
-export const Board = () => {
+const cellKey = (x: number, y: number) => `${x},${y}`;
+
+type BoardProps = {
+  issues?: ValidationIssue[];
+};
+
+export const Board = ({ issues = [] }: BoardProps) => {
   const unlocked = useBuildStore((state) => state.unlocked);
   const placed = useBuildStore((state) => state.placed);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
   const mode = useBuildStore((state) => state.mode);
   const toggleUnlocked = useBuildStore((state) => state.toggleUnlocked);
   const select = useBuildStore((state) => state.select);
+
+  const cellIssueLevel = useMemo(() => {
+    const map = new Map<string, "error" | "warning">();
+    for (const issue of issues) {
+      if (!issue.cells?.length) continue;
+      const level = issue.level;
+      for (const cell of issue.cells) {
+        const key = cellKey(cell.x, cell.y);
+        if (level === "error") {
+          map.set(key, "error");
+        } else if (!map.has(key)) {
+          map.set(key, "warning");
+        }
+      }
+    }
+    return map;
+  }, [issues]);
 
   const occupiedByIndex = useMemo(() => {
     const byIndex = new Map<
@@ -81,6 +105,7 @@ export const Board = () => {
             const topTile = occupiedEntries[occupiedEntries.length - 1];
             const hasTile = Boolean(topTile);
             const isSelected = Boolean(topTile?.isSelected);
+            const issueLevel = cellIssueLevel.get(cellKey(x, y));
 
             const baseClasses =
               "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-md border text-xs font-semibold uppercase transition";
@@ -91,6 +116,12 @@ export const Board = () => {
               ? "border-indigo-400 bg-indigo-100 text-indigo-900"
               : "";
             const selectedClasses = isSelected ? "border-2 border-sky-600" : "";
+            const issueClasses =
+              issueLevel === "error"
+                ? "ring-2 ring-red-500 ring-inset bg-red-100/80"
+                : issueLevel === "warning"
+                  ? "ring-2 ring-amber-400 ring-inset bg-amber-50/80"
+                  : "";
             const hoverClasses = isInteractive && !hasTile
               ? "hover:border-emerald-400 hover:bg-emerald-100"
               : "cursor-pointer";
@@ -110,7 +141,7 @@ export const Board = () => {
                 aria-label={getCellLabel(isHero, isUnlocked)}
                 aria-pressed={isInteractive ? isUnlocked : undefined}
                 aria-disabled={!isInteractive}
-                className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${hoverClasses}`}
+                className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${hoverClasses}`}
               >
                 {hasTile ? (
                   <span

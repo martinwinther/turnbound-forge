@@ -28,6 +28,10 @@ export type ItemShape = {
   rotatable: boolean;
 };
 
+export type ItemModifiers = {
+  weaponCapBonus?: number;
+};
+
 export type Item = {
   id: string;
   name: string;
@@ -37,6 +41,8 @@ export type Item = {
   rulesText: string;
   icon: string;
   isUnique?: boolean;
+  isHalfTrinket?: boolean;
+  modifiers?: ItemModifiers;
 };
 
 export type BuildStateV1 = {

@@ -1,29 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Board } from "@/components/Board";
+import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
-import { items } from "@/lib/data";
-import { HERO_START } from "@/lib/grid";
+import { items, itemsById, trinketsById } from "@/lib/data";
+import { GRID_H, GRID_W, HERO_START } from "@/lib/grid";
+import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
 
 const modeButtonBase =
   "rounded-md border px-4 py-2 text-sm font-semibold transition";
 
+const itemsByIdAll = { ...itemsById, ...trinketsById };
+
 export const PlannerShell = () => {
   const [pickedItemId, setPickedItemId] = useState<string | null>(
     items[0]?.id ?? null,
   );
+  const [devX, setDevX] = useState(HERO_START.x);
+  const [devY, setDevY] = useState(HERO_START.y);
+
   const mode = useBuildStore((state) => state.mode);
+  const unlocked = useBuildStore((state) => state.unlocked);
+  const placed = useBuildStore((state) => state.placed);
+  const trinkets = useBuildStore((state) => state.trinkets);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
   const setMode = useBuildStore((state) => state.setMode);
+  const select = useBuildStore((state) => state.select);
   const resetUnlockedToStart = useBuildStore(
     (state) => state.resetUnlockedToStart,
   );
   const addPlaced = useBuildStore((state) => state.addPlaced);
   const removePlaced = useBuildStore((state) => state.removePlaced);
+  const addTrinket = useBuildStore((state) => state.addTrinket);
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
+
+  const validation = useMemo(
+    () =>
+      validateBuild({
+        state: { v: 1, unlocked, placed, trinkets },
+        itemsById: itemsByIdAll,
+        gridW: GRID_W,
+        gridH: GRID_H,
+      }),
+    [unlocked, placed, trinkets],
+  );
 
   const isBuildMode = mode === "build";
   const isUnlockMode = mode === "unlock";
@@ -84,6 +107,49 @@ export const PlannerShell = () => {
                   Dev Tools
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-1">
+                    <label htmlFor="dev-x" className="sr-only">
+                      X
+                    </label>
+                    <input
+                      id="dev-x"
+                      type="number"
+                      min={0}
+                      max={GRID_W - 1}
+                      value={devX}
+                      onChange={(e) =>
+                        setDevX(Number.parseInt(e.target.value, 10) || 0)
+                      }
+                      className="w-12 rounded border border-zinc-300 px-1.5 py-1 text-xs"
+                    />
+                    <label htmlFor="dev-y" className="sr-only">
+                      Y
+                    </label>
+                    <input
+                      id="dev-y"
+                      type="number"
+                      min={0}
+                      max={GRID_H - 1}
+                      value={devY}
+                      onChange={(e) =>
+                        setDevY(Number.parseInt(e.target.value, 10) || 0)
+                      }
+                      className="w-12 rounded border border-zinc-300 px-1.5 py-1 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        addPlaced(
+                          pickedItemId ?? items[0]?.id ?? "",
+                          devX,
+                          devY,
+                        )
+                      }
+                      className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"
+                    >
+                      Place at X,Y
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
@@ -126,15 +192,28 @@ export const PlannerShell = () => {
                   >
                     Rotate CCW
                   </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      addTrinket(0, 0, "trinket-armory-signet")
+                    }
+                    className="rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700"
+                  >
+                    Add weapon-cap trinket
+                  </button>
                 </div>
               </div>
             ) : null}
           </aside>
           <div className="flex justify-center">
-            <Board />
+            <Board issues={validation.issues} />
           </div>
-          <aside className="rounded-xl border border-dashed border-zinc-300 bg-white p-4 text-sm text-zinc-500">
-            Summary (coming soon)
+          <aside className="flex min-w-[280px] flex-col">
+            <BuildSummary
+              validation={validation}
+              placedCount={placed.length}
+              onSelectInstance={select}
+            />
           </aside>
         </div>
       </div>

@@ -10,6 +10,7 @@ type PlacedTile = BuildStateV1["placed"][number];
 type BuildState = {
   unlocked: number[];
   placed: BuildStateV1["placed"];
+  trinkets: BuildStateV1["trinkets"];
   selectedInstanceId: string | null;
   mode: BuildMode;
   setMode: (mode: BuildMode) => void;
@@ -17,6 +18,7 @@ type BuildState = {
   resetUnlockedToStart: () => void;
   addPlaced: (itemId: string, x: number, y: number, rot?: Rotation) => void;
   removePlaced: (instanceId: string) => void;
+  addTrinket: (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => void;
   select: (instanceId: string | null) => void;
   rotateSelected: (direction: RotationDirection) => void;
   setPlacedPosition: (instanceId: string, x: number, y: number) => void;
@@ -61,6 +63,7 @@ const updatePlacedTile = (
 export const useBuildStore = create<BuildState>((set, get) => ({
   unlocked: startUnlocked,
   placed: [],
+  trinkets: [],
   selectedInstanceId: null,
   mode: "build",
   setMode: (mode) => set({ mode }),
@@ -96,6 +99,16 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       placed: state.placed.filter((tile) => tile.instanceId !== instanceId),
       selectedInstanceId:
         state.selectedInstanceId === instanceId ? null : state.selectedInstanceId,
+    }));
+  },
+  addTrinket: (slot, half, itemId) => {
+    set((state) => ({
+      trinkets: [
+        ...state.trinkets.filter(
+          (t) => !(t.slot === slot && t.half === half),
+        ),
+        { slot, half, itemId },
+      ],
     }));
   },
   select: (instanceId) => set({ selectedInstanceId: instanceId }),
