@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 import { Board } from "@/components/Board";
 import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
-import { items, itemsById, trinketsById } from "@/lib/data";
+import { TrinketSlots } from "@/components/TrinketSlots";
+import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
 import { GRID_H, GRID_W, HERO_START } from "@/lib/grid";
 import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
@@ -34,7 +35,9 @@ export const PlannerShell = () => {
   );
   const addPlaced = useBuildStore((state) => state.addPlaced);
   const removePlaced = useBuildStore((state) => state.removePlaced);
-  const addTrinket = useBuildStore((state) => state.addTrinket);
+  const setTrinket = useBuildStore((state) => state.setTrinket);
+  const setFullTrinket = useBuildStore((state) => state.setFullTrinket);
+  const removeTrinket = useBuildStore((state) => state.removeTrinket);
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
 
   const validation = useMemo(
@@ -51,6 +54,22 @@ export const PlannerShell = () => {
   const isBuildMode = mode === "build";
   const isUnlockMode = mode === "unlock";
   const isDevelopment = process.env.NODE_ENV === "development";
+  const availableTrinkets = useMemo(
+    () => allTrinkets.filter((item) => item.category === "trinket"),
+    [],
+  );
+
+  const handleAddTrinket = (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => {
+    const item = trinketsById[itemId];
+    if (!item || item.category !== "trinket") {
+      return;
+    }
+    if (item.isHalfTrinket) {
+      setTrinket(slot, half, itemId);
+      return;
+    }
+    setFullTrinket(slot, itemId);
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-8">
@@ -192,15 +211,6 @@ export const PlannerShell = () => {
                   >
                     Rotate CCW
                   </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      addTrinket(0, 0, "trinket-armory-signet")
-                    }
-                    className="rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700"
-                  >
-                    Add weapon-cap trinket
-                  </button>
                 </div>
               </div>
             ) : null}
@@ -208,7 +218,13 @@ export const PlannerShell = () => {
           <div className="flex justify-center">
             <Board issues={validation.issues} />
           </div>
-          <aside className="flex min-w-[280px] flex-col">
+          <aside className="flex min-w-[280px] flex-col gap-4">
+            <TrinketSlots
+              trinkets={trinkets}
+              onAdd={handleAddTrinket}
+              onRemove={removeTrinket}
+              availableTrinkets={availableTrinkets}
+            />
             <BuildSummary
               validation={validation}
               placedCount={placed.length}

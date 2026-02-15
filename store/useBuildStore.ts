@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { getStartUnlockedIndices } from "@/lib/grid";
-import type { BuildStateV1, Rotation } from "@/lib/types";
+import type { BuildStateV1, Item, Rotation } from "@/lib/types";
 
 type BuildMode = "build" | "unlock";
 type RotationDirection = "cw" | "ccw";
@@ -18,7 +18,11 @@ type BuildState = {
   resetUnlockedToStart: () => void;
   addPlaced: (itemId: string, x: number, y: number, rot?: Rotation) => void;
   removePlaced: (instanceId: string) => void;
-  addTrinket: (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => void;
+  addTrinket: (slot: 0 | 1 | 2, half: 0 | 1, item: Item) => void;
+  setTrinket: (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => void;
+  setFullTrinket: (slot: 0 | 1 | 2, itemId: string) => void;
+  removeTrinket: (slot: 0 | 1 | 2, half: 0 | 1) => void;
+  clearTrinketSlot: (slot: 0 | 1 | 2) => void;
   select: (instanceId: string | null) => void;
   rotateSelected: (direction: RotationDirection) => void;
   setPlacedPosition: (instanceId: string, x: number, y: number) => void;
@@ -58,6 +62,18 @@ const updatePlacedTile = (
 
     return updater(tile);
   });
+};
+
+const setHalfTrinket = (
+  trinkets: BuildStateV1["trinkets"],
+  slot: 0 | 1 | 2,
+  half: 0 | 1,
+  itemId: string,
+): BuildStateV1["trinkets"] => {
+  return [
+    ...trinkets.filter((t) => !(t.slot === slot && t.half === half)),
+    { slot, half, itemId },
+  ];
 };
 
 export const useBuildStore = create<BuildState>((set, get) => ({
@@ -101,14 +117,51 @@ export const useBuildStore = create<BuildState>((set, get) => ({
         state.selectedInstanceId === instanceId ? null : state.selectedInstanceId,
     }));
   },
-  addTrinket: (slot, half, itemId) => {
+  addTrinket: (slot, half, item) => {
+    if (item.isHalfTrinket) {
+      get().setTrinket(slot, half, item.id);
+      return;
+    }
+    get().setFullTrinket(slot, item.id);
+  },
+  setTrinket: (slot, half, itemId) => {
     set((state) => ({
-      trinkets: [
-        ...state.trinkets.filter(
-          (t) => !(t.slot === slot && t.half === half),
-        ),
-        { slot, half, itemId },
-      ],
+      trinkets: setHalfTrinket(state.trinkets, slot, half, itemId),
+    }));
+  },
+  setFullTrinket: (slot, itemId) => {
+    set((state) => {
+      const withoutSlot = state.trinkets.filter((t) => t.slot !== slot);
+      return {
+        trinkets: [
+          ...withoutSlot,
+          { slot, half: 0, itemId },
+          { slot, half: 1, itemId },
+        ],
+      };
+    });
+  },
+  removeTrinket: (slot, half) => {
+    set((state) => {
+      const slotEntries = state.trinkets.filter((t) => t.slot === slot);
+      const selected = slotEntries.find((t) => t.half === half);
+      const otherHalf = half === 0 ? 1 : 0;
+      const other = slotEntries.find((t) => t.half === otherHalf);
+      const shouldClearSlot =
+        selected != null &&
+        other != null &&
+        selected.itemId === other.itemId;
+
+      return {
+        trinkets: shouldClearSlot
+          ? state.trinkets.filter((t) => t.slot !== slot)
+          : state.trinkets.filter((t) => !(t.slot === slot && t.half === half)),
+      };
+    });
+  },
+  clearTrinketSlot: (slot) => {
+    set((state) => ({
+      trinkets: state.trinkets.filter((t) => t.slot !== slot),
     }));
   },
   select: (instanceId) => set({ selectedInstanceId: instanceId }),

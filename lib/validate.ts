@@ -26,8 +26,60 @@ type ValidateBuildArgs = {
   gridH: number;
 };
 
+type CountedTrinket = {
+  itemId: string;
+};
+
 const inBounds = (x: number, y: number, w: number, h: number): boolean =>
   x >= 0 && x < w && y >= 0 && y < h;
+
+const collectCountedTrinkets = (
+  trinkets: BuildStateV1["trinkets"],
+  itemsById: Record<string, Item>,
+): CountedTrinket[] => {
+  const counted: CountedTrinket[] = [];
+  const visitedHalves = new Set<string>();
+
+  for (const entry of trinkets) {
+    const halfKey = `${entry.slot}-${entry.half}`;
+    if (visitedHalves.has(halfKey)) {
+      continue;
+    }
+
+    const item = itemsById[entry.itemId];
+    const otherHalf = entry.half === 0 ? 1 : 0;
+    const other = trinkets.find(
+      (candidate) =>
+        candidate.slot === entry.slot &&
+        candidate.half === otherHalf &&
+        candidate.itemId === entry.itemId,
+    );
+
+    if (item?.isHalfTrinket) {
+      counted.push({
+        itemId: entry.itemId,
+      });
+      visitedHalves.add(halfKey);
+      continue;
+    }
+
+    if (other) {
+      counted.push({
+        itemId: entry.itemId,
+      });
+      visitedHalves.add(`${entry.slot}-0`);
+      visitedHalves.add(`${entry.slot}-1`);
+      continue;
+    }
+
+    counted.push({
+      itemId: entry.itemId,
+    });
+    visitedHalves.add(halfKey);
+  }
+
+  return counted;
+};
 
 export function validateBuild({
   state,
@@ -38,9 +90,10 @@ export function validateBuild({
   const issues: ValidationIssue[] = [];
   const { placed, unlocked, trinkets } = state;
 
+  const countedTrinkets = collectCountedTrinkets(trinkets, itemsById);
   let weaponCap = 3;
-  for (const t of trinkets) {
-    const item = itemsById[t.itemId];
+  for (const counted of countedTrinkets) {
+    const item = itemsById[counted.itemId];
     if (item?.modifiers?.weaponCapBonus != null) {
       weaponCap += item.modifiers.weaponCapBonus;
     }
@@ -163,6 +216,93 @@ export function validateBuild({
         id: `unique-duplicate-${itemId}`,
         level: "error",
         message: `Unique item "${item?.name ?? itemId}" is placed ${count} times.`,
+      });
+    }
+  }
+
+  const trinketBySlot = new Map<
+    0 | 1 | 2,
+    Partial<Record<0 | 1, BuildStateV1["trinkets"][number]>>
+  >();
+  for (const slot of [0, 1, 2] as const) {
+    const inSlot = trinkets.filter((entry) => entry.slot === slot);
+    const half0 = inSlot.find((entry) => entry.half === 0);
+    const half1 = inSlot.find((entry) => entry.half === 1);
+    trinketBySlot.set(slot, { 0: half0, 1: half1 });
+  }
+
+  for (const slot of [0, 1, 2] as const) {
+    const slotState = trinketBySlot.get(slot);
+    const left = slotState?.[0];
+    const right = slotState?.[1];
+    const leftItem = left ? itemsById[left.itemId] : undefined;
+    const rightItem = right ? itemsById[right.itemId] : undefined;
+
+    if (
+      left &&
+      right &&
+      left.itemId !== right.itemId &&
+      !leftItem?.isHalfTrinket &&
+      !rightItem?.isHalfTrinket
+    ) {
+      issues.push({
+        id: `trinket-invalid-double-full-${slot}`,
+        level: "error",
+        message: `Trinket slot ${slot + 1} is in an invalid state.`,
+      });
+    }
+
+    if (left && !leftItem?.isHalfTrinket && (!right || right.itemId !== left.itemId)) {
+      issues.push({
+        id: `trinket-invalid-left-full-${slot}`,
+        level: "error",
+        message: `Trinket slot ${slot + 1} is in an invalid state.`,
+      });
+    }
+
+    if (
+      right &&
+      !rightItem?.isHalfTrinket &&
+      (!left || left.itemId !== right.itemId)
+    ) {
+      issues.push({
+        id: `trinket-invalid-right-full-${slot}`,
+        level: "error",
+        message: `Trinket slot ${slot + 1} is in an invalid state.`,
+      });
+    }
+
+    if (
+      left &&
+      right &&
+      left.itemId !== right.itemId &&
+      (!leftItem?.isHalfTrinket || !rightItem?.isHalfTrinket)
+    ) {
+      issues.push({
+        id: `trinket-invalid-mixed-full-${slot}`,
+        level: "error",
+        message: `Trinket slot ${slot + 1} is in an invalid state.`,
+      });
+    }
+  }
+
+  const uniqueTrinketCount = new Map<string, number>();
+  for (const counted of countedTrinkets) {
+    const item = itemsById[counted.itemId];
+    if (item?.isUnique) {
+      uniqueTrinketCount.set(
+        counted.itemId,
+        (uniqueTrinketCount.get(counted.itemId) ?? 0) + 1,
+      );
+    }
+  }
+  for (const [itemId, count] of uniqueTrinketCount) {
+    if (count > 1) {
+      const item = itemsById[itemId];
+      issues.push({
+        id: `unique-trinket-duplicate-${itemId}`,
+        level: "error",
+        message: `Unique trinket "${item?.name ?? itemId}" is equipped ${count} times.`,
       });
     }
   }
