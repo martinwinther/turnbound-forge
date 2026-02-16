@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Board } from "@/components/Board";
 import { BuildSummary } from "@/components/BuildSummary";
@@ -15,6 +15,20 @@ const modeButtonBase =
   "rounded-md border px-4 py-2 text-sm font-semibold transition";
 
 const itemsByIdAll = { ...itemsById, ...trinketsById };
+const interactiveTextSelector =
+  "input, textarea, select, [contenteditable='true'], [role='textbox']";
+
+const isTypingTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(target.closest(interactiveTextSelector));
+};
 
 export const PlannerShell = () => {
   const [pickedItemId, setPickedItemId] = useState<string | null>(
@@ -39,6 +53,60 @@ export const PlannerShell = () => {
   const setFullTrinket = useBuildStore((state) => state.setFullTrinket);
   const removeTrinket = useBuildStore((state) => state.removeTrinket);
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isPlannerPath =
+        window.location.pathname === "/planner" ||
+        window.location.pathname.startsWith("/planner/");
+      if (!isPlannerPath || isTypingTarget(event.target)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "r") {
+        event.preventDefault();
+        rotateSelected(event.shiftKey ? "ccw" : "cw");
+        return;
+      }
+
+      if (key === "q") {
+        event.preventDefault();
+        rotateSelected("ccw");
+        return;
+      }
+
+      if (key === "e") {
+        event.preventDefault();
+        rotateSelected("cw");
+        return;
+      }
+
+      if (key === "delete" || key === "backspace") {
+        if (!selectedInstanceId) {
+          return;
+        }
+        event.preventDefault();
+        removePlaced(selectedInstanceId);
+        return;
+      }
+
+      if (key === "escape") {
+        event.preventDefault();
+        select(null);
+        return;
+      }
+
+      if (key === "u") {
+        event.preventDefault();
+        setMode(mode === "build" ? "unlock" : "build");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mode, removePlaced, rotateSelected, select, selectedInstanceId, setMode]);
 
   const validation = useMemo(
     () =>
@@ -74,8 +142,11 @@ export const PlannerShell = () => {
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Mode
+            </span>
             <button
               type="button"
               onClick={() => setMode("build")}
@@ -101,14 +172,20 @@ export const PlannerShell = () => {
               Unlock
             </button>
           </div>
-          <button
-            type="button"
-            onClick={resetUnlockedToStart}
-            className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300"
-          >
-            Reset start mask
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={resetUnlockedToStart}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300"
+            >
+              Reset start mask
+            </button>
+          </div>
         </header>
+        <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
+          Locked cells are not usable until unlocked (warning only). Press R/Q/E
+          to rotate selected tile.
+        </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
           <aside className="flex min-h-[320px] flex-col rounded-xl border border-zinc-200 bg-white p-4">

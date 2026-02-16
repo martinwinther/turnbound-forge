@@ -8,11 +8,28 @@ import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
 import type { ValidationIssue } from "@/lib/validate";
 
-const getCellLabel = (isHero: boolean, isUnlocked: boolean) => {
+const getCellLabel = (
+  x: number,
+  y: number,
+  isHero: boolean,
+  isUnlocked: boolean,
+  topTile?: { itemName: string; isSelected: boolean },
+) => {
+  const parts = [`Cell ${x + 1},${y + 1}`];
+  parts.push(isUnlocked ? "unlocked" : "locked");
+
   if (isHero) {
-    return "Hero start cell";
+    parts.push("hero start");
   }
-  return isUnlocked ? "Unlocked cell" : "Locked cell";
+
+  if (topTile) {
+    parts.push(`${topTile.itemName} tile`);
+    if (topTile.isSelected) {
+      parts.push("selected");
+    }
+  }
+
+  return parts.join(", ");
 };
 
 const cellKey = (x: number, y: number) => `${x},${y}`;
@@ -105,6 +122,7 @@ export const Board = ({ issues = [] }: BoardProps) => {
             const topTile = occupiedEntries[occupiedEntries.length - 1];
             const hasTile = Boolean(topTile);
             const isSelected = Boolean(topTile?.isSelected);
+            const isSelectedAnchor = Boolean(topTile?.isSelected && topTile?.isAnchor);
             const issueLevel = cellIssueLevel.get(cellKey(x, y));
 
             const baseClasses =
@@ -115,7 +133,9 @@ export const Board = ({ issues = [] }: BoardProps) => {
             const heroClasses = isHero
               ? "border-indigo-400 bg-indigo-100 text-indigo-900"
               : "";
-            const selectedClasses = isSelected ? "border-2 border-sky-600" : "";
+            const selectedClasses = isSelected
+              ? "border-sky-600 ring-2 ring-sky-500 ring-inset"
+              : "";
             const issueClasses =
               issueLevel === "error"
                 ? "ring-2 ring-red-500 ring-inset bg-red-100/80"
@@ -136,9 +156,10 @@ export const Board = ({ issues = [] }: BoardProps) => {
                     return;
                   }
 
+                  select(null);
                   toggleUnlocked(index);
                 }}
-                aria-label={getCellLabel(isHero, isUnlocked)}
+                aria-label={getCellLabel(x, y, isHero, isUnlocked, topTile)}
                 aria-pressed={isInteractive ? isUnlocked : undefined}
                 aria-disabled={!isInteractive}
                 className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${hoverClasses}`}
@@ -154,6 +175,12 @@ export const Board = ({ issues = [] }: BoardProps) => {
                   <span className="pointer-events-none absolute bottom-0 left-0 right-0 truncate bg-zinc-900/70 px-1 py-0.5 text-[9px] font-semibold normal-case text-white">
                     {topTile.itemName}
                   </span>
+                ) : null}
+                {isSelectedAnchor ? (
+                  <span
+                    className="pointer-events-none absolute left-1 top-1 h-2.5 w-2.5 rounded-full border border-sky-700 bg-white"
+                    aria-hidden="true"
+                  />
                 ) : null}
                 {isHero ? (
                   <span className="relative z-10 rounded bg-indigo-700 px-1 py-0.5 text-[9px] text-white">

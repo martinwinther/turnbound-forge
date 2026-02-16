@@ -142,6 +142,13 @@ export function ItemLibrary({
                 <button
                   type="button"
                   onClick={() => onPick?.(item.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onPick?.(item.id);
+                    }
+                  }}
+                  aria-pressed={isSelected}
                   className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition ${
                     isSelected
                       ? "border-zinc-900 bg-zinc-100 font-medium text-zinc-900"
