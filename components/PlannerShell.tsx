@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Board } from "@/components/Board";
 import { BuildSummary } from "@/components/BuildSummary";
@@ -8,6 +8,7 @@ import { ItemLibrary } from "@/components/ItemLibrary";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
 import { GRID_H, GRID_W, HERO_START } from "@/lib/grid";
+import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
 import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
 
@@ -36,6 +37,9 @@ export const PlannerShell = () => {
   );
   const [devX, setDevX] = useState(HERO_START.x);
   const [devY, setDevY] = useState(HERO_START.y);
+  const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
+  const feedbackTimeoutRef = useRef<number | null>(null);
+  const didLoadFromUrlRef = useRef(false);
 
   const mode = useBuildStore((state) => state.mode);
   const unlocked = useBuildStore((state) => state.unlocked);
@@ -43,6 +47,8 @@ export const PlannerShell = () => {
   const trinkets = useBuildStore((state) => state.trinkets);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
   const setMode = useBuildStore((state) => state.setMode);
+  const loadBuildState = useBuildStore((state) => state.loadBuildState);
+  const getBuildState = useBuildStore((state) => state.getBuildState);
   const select = useBuildStore((state) => state.select);
   const resetUnlockedToStart = useBuildStore(
     (state) => state.resetUnlockedToStart,
@@ -53,6 +59,33 @@ export const PlannerShell = () => {
   const setFullTrinket = useBuildStore((state) => state.setFullTrinket);
   const removeTrinket = useBuildStore((state) => state.removeTrinket);
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
+
+  const showLinkFeedback = (message: string) => {
+    setLinkFeedback(message);
+    if (feedbackTimeoutRef.current !== null) {
+      window.clearTimeout(feedbackTimeoutRef.current);
+    }
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setLinkFeedback(null);
+      feedbackTimeoutRef.current = null;
+    }, 1500);
+  };
+
+  const handleCopyShareLink = async () => {
+    try {
+      const state = getBuildState();
+      const encoded = encodeBuildToString(state);
+      const url = new URL(window.location.href);
+      url.searchParams.set(BUILD_PARAM, encoded);
+      const nextUrl = url.toString();
+
+      await navigator.clipboard.writeText(nextUrl);
+      window.history.replaceState({}, "", nextUrl);
+      showLinkFeedback("Copied!");
+    } catch {
+      showLinkFeedback("Copy failed");
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -107,6 +140,40 @@ export const PlannerShell = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mode, removePlaced, rotateSelected, select, selectedInstanceId, setMode]);
+
+  useEffect(() => {
+    if (didLoadFromUrlRef.current) {
+      return;
+    }
+    didLoadFromUrlRef.current = true;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const encoded = searchParams.get(BUILD_PARAM);
+    if (!encoded) {
+      return;
+    }
+
+    const decoded = decodeBuildFromString(encoded);
+    if (!decoded) {
+      window.setTimeout(() => {
+        showLinkFeedback("Invalid share link");
+      }, 0);
+      return;
+    }
+
+    loadBuildState(decoded);
+    window.setTimeout(() => {
+      showLinkFeedback("Loaded build from link");
+    }, 0);
+  }, [loadBuildState]);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimeoutRef.current !== null) {
+        window.clearTimeout(feedbackTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const validation = useMemo(
     () =>
@@ -175,11 +242,27 @@ export const PlannerShell = () => {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleCopyShareLink}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300"
+            >
+              Copy Share Link
+            </button>
+            <button
+              type="button"
               onClick={resetUnlockedToStart}
               className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300"
             >
               Reset start mask
             </button>
+            {linkFeedback ? (
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-xs font-medium text-zinc-600"
+              >
+                {linkFeedback}
+              </span>
+            ) : null}
           </div>
         </header>
         <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">

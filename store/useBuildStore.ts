@@ -13,6 +13,8 @@ type BuildState = {
   trinkets: BuildStateV1["trinkets"];
   selectedInstanceId: string | null;
   mode: BuildMode;
+  loadBuildState: (next: BuildStateV1) => void;
+  getBuildState: () => BuildStateV1;
   setMode: (mode: BuildMode) => void;
   toggleUnlocked: (index: number) => void;
   resetUnlockedToStart: () => void;
@@ -76,12 +78,49 @@ const setHalfTrinket = (
   ];
 };
 
+const sortUnlocked = (values: number[]): number[] => {
+  return [...values].sort((a, b) => a - b);
+};
+
+const sortPlaced = (values: BuildStateV1["placed"]): BuildStateV1["placed"] => {
+  return [...values].sort((a, b) => a.instanceId.localeCompare(b.instanceId));
+};
+
+const sortTrinkets = (
+  values: BuildStateV1["trinkets"],
+): BuildStateV1["trinkets"] => {
+  return [...values].sort((a, b) => {
+    if (a.slot !== b.slot) {
+      return a.slot - b.slot;
+    }
+    return a.half - b.half;
+  });
+};
+
 export const useBuildStore = create<BuildState>((set, get) => ({
   unlocked: startUnlocked,
   placed: [],
   trinkets: [],
   selectedInstanceId: null,
   mode: "build",
+  loadBuildState: (next) => {
+    set((state) => ({
+      mode: state.mode,
+      unlocked: [...next.unlocked],
+      placed: [...next.placed],
+      trinkets: [...next.trinkets],
+      selectedInstanceId: null,
+    }));
+  },
+  getBuildState: () => {
+    const { unlocked, placed, trinkets } = get();
+    return {
+      v: 1,
+      unlocked: sortUnlocked(unlocked),
+      placed: sortPlaced(placed),
+      trinkets: sortTrinkets(trinkets),
+    };
+  },
   setMode: (mode) => set({ mode }),
   toggleUnlocked: (index) => {
     if (get().mode !== "unlock") {
