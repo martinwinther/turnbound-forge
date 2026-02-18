@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { itemsById } from "@/lib/data";
 import { HERO_START, GRID_H, GRID_W, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
+import type { Cell } from "@/lib/polyomino";
+import type { Rotation } from "@/lib/types";
 import type { ValidationIssue } from "@/lib/validate";
 
 const getCellLabel = (
@@ -36,15 +38,54 @@ const cellKey = (x: number, y: number) => `${x},${y}`;
 
 type BoardProps = {
   issues?: ValidationIssue[];
+  dragPreview?: {
+    itemId: string;
+    anchor: Cell | null;
+    rot: Rotation;
+    valid: boolean;
+    cells: Cell[];
+    tone: "valid" | "invalid" | "warning";
+    issues?: string[];
+  };
+  onBoardRect?: (rect: DOMRect) => void;
 };
 
-export const Board = ({ issues = [] }: BoardProps) => {
+export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => {
   const unlocked = useBuildStore((state) => state.unlocked);
   const placed = useBuildStore((state) => state.placed);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
   const mode = useBuildStore((state) => state.mode);
   const toggleUnlocked = useBuildStore((state) => state.toggleUnlocked);
   const select = useBuildStore((state) => state.select);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!onBoardRect || !gridRef.current) {
+      return;
+    }
+
+    const measure = () => {
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+      onBoardRect(rect);
+    };
+
+    measure();
+    const resizeObserver = new ResizeObserver(() => {
+      measure();
+    });
+    resizeObserver.observe(gridRef.current);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [onBoardRect]);
 
   const cellIssueLevel = useMemo(() => {
     const map = new Map<string, "error" | "warning">();
@@ -109,9 +150,23 @@ export const Board = ({ issues = [] }: BoardProps) => {
     return byIndex;
   }, [placed, selectedInstanceId]);
 
+  const dragCellMap = useMemo(() => {
+    const map = new Map<string, "valid" | "invalid" | "warning">();
+    if (!dragPreview) {
+      return map;
+    }
+    for (const cell of dragPreview.cells) {
+      if (cell.x < 0 || cell.x >= GRID_W || cell.y < 0 || cell.y >= GRID_H) {
+        continue;
+      }
+      map.set(cellKey(cell.x, cell.y), dragPreview.tone);
+    }
+    return map;
+  }, [dragPreview]);
+
   return (
     <div className="inline-block rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
-      <div className="grid grid-cols-7 gap-1">
+      <div ref={gridRef} className="grid grid-cols-7 gap-1">
         {Array.from({ length: GRID_H }).map((_, y) =>
           Array.from({ length: GRID_W }).map((__, x) => {
             const index = toIndex(x, y);
@@ -124,6 +179,7 @@ export const Board = ({ issues = [] }: BoardProps) => {
             const isSelected = Boolean(topTile?.isSelected);
             const isSelectedAnchor = Boolean(topTile?.isSelected && topTile?.isAnchor);
             const issueLevel = cellIssueLevel.get(cellKey(x, y));
+            const dragTone = dragCellMap.get(cellKey(x, y));
 
             const baseClasses =
               "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-md border text-xs font-semibold uppercase transition";
@@ -142,6 +198,14 @@ export const Board = ({ issues = [] }: BoardProps) => {
                 : issueLevel === "warning"
                   ? "ring-2 ring-amber-400 ring-inset bg-amber-50/80"
                   : "";
+            const dragClasses =
+              dragTone === "invalid"
+                ? "ring-2 ring-red-500 ring-inset bg-red-300/45"
+                : dragTone === "warning"
+                  ? "ring-2 ring-amber-500 ring-inset bg-amber-200/45"
+                  : dragTone === "valid"
+                    ? "ring-2 ring-emerald-500 ring-inset bg-emerald-300/45"
+                    : "";
             const hoverClasses = isInteractive && !hasTile
               ? "hover:border-emerald-400 hover:bg-emerald-100"
               : "cursor-pointer";
@@ -162,7 +226,7 @@ export const Board = ({ issues = [] }: BoardProps) => {
                 aria-label={getCellLabel(x, y, isHero, isUnlocked, topTile)}
                 aria-pressed={isInteractive ? isUnlocked : undefined}
                 aria-disabled={!isInteractive}
-                className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${hoverClasses}`}
+                className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${dragClasses} ${hoverClasses}`}
               >
                 {hasTile ? (
                   <span

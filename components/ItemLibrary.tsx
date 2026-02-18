@@ -10,9 +10,12 @@ const TAG_SNIPPET_COUNT = 3;
 
 type ItemLibraryProps = {
   onPick?: (itemId: string) => void;
+  onDragStart?: (itemId: string, event: React.PointerEvent<HTMLButtonElement>) => void;
   selectedItemId?: string | null;
   mode?: "compact" | "full";
 };
+
+const DRAG_THRESHOLD_PX = 6;
 
 function getAllTags(itemList: Item[]): string[] {
   const set = new Set<string>();
@@ -45,6 +48,7 @@ function filterItems(
 
 export function ItemLibrary({
   onPick,
+  onDragStart,
   selectedItemId = null,
   mode = "full",
 }: ItemLibraryProps) {
@@ -141,7 +145,45 @@ export function ItemLibrary({
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => onPick?.(item.id)}
+                  onPointerDown={(event) => {
+                    const element = event.currentTarget;
+                    element.dataset.dragStartX = String(event.clientX);
+                    element.dataset.dragStartY = String(event.clientY);
+                    element.dataset.wasDrag = "0";
+                    onDragStart?.(item.id, event);
+                  }}
+                  onPointerMove={(event) => {
+                    const element = event.currentTarget;
+                    const startX = Number(element.dataset.dragStartX);
+                    const startY = Number(element.dataset.dragStartY);
+                    if (!Number.isFinite(startX) || !Number.isFinite(startY)) {
+                      return;
+                    }
+
+                    const movedX = event.clientX - startX;
+                    const movedY = event.clientY - startY;
+                    const movedDistance = Math.hypot(movedX, movedY);
+                    if (movedDistance >= DRAG_THRESHOLD_PX) {
+                      element.dataset.wasDrag = "1";
+                    }
+                  }}
+                  onPointerUp={(event) => {
+                    const element = event.currentTarget;
+                    // Keep this flag through click dispatch, then clear it.
+                    window.setTimeout(() => {
+                      delete element.dataset.dragStartX;
+                      delete element.dataset.dragStartY;
+                      delete element.dataset.wasDrag;
+                    }, 0);
+                  }}
+                  onClick={(event) => {
+                    const wasDrag = event.currentTarget.dataset.wasDrag === "1";
+                    if (wasDrag) {
+                      event.preventDefault();
+                      return;
+                    }
+                    onPick?.(item.id);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();

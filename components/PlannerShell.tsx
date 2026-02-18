@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Board } from "@/components/Board";
 import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
-import { GRID_H, GRID_W, HERO_START } from "@/lib/grid";
+import { GRID_H, GRID_W, HERO_START, inBounds, toIndex } from "@/lib/grid";
+import type { Cell } from "@/lib/polyomino";
+import { getOccupiedCells } from "@/lib/polyomino";
 import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
+import { useDragSession } from "@/lib/useDragSession";
 import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
 
@@ -18,6 +21,7 @@ const modeButtonBase =
 const itemsByIdAll = { ...itemsById, ...trinketsById };
 const interactiveTextSelector =
   "input, textarea, select, [contenteditable='true'], [role='textbox']";
+const DEFAULT_POINTER = { x: 0, y: 0 };
 
 const isTypingTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) {
@@ -38,6 +42,7 @@ export const PlannerShell = () => {
   const [devX, setDevX] = useState(HERO_START.x);
   const [devY, setDevY] = useState(HERO_START.y);
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
+  const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
   const didLoadFromUrlRef = useRef(false);
 
@@ -59,6 +64,154 @@ export const PlannerShell = () => {
   const setFullTrinket = useBuildStore((state) => state.setFullTrinket);
   const removeTrinket = useBuildStore((state) => state.removeTrinket);
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
+  const dragPreviewRef = useRef<{
+    anchor: Cell | null;
+    valid: boolean;
+  } | null>(null);
+
+  const placedCellSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const tile of placed) {
+      const item = itemsById[tile.itemId];
+      if (!item) {
+        continue;
+      }
+      const cells = getOccupiedCells({
+        anchor: { x: tile.x, y: tile.y },
+        shapeCells: item.shape.cells,
+        pivot: item.shape.pivot,
+        rot: tile.rot,
+      });
+      for (const cell of cells) {
+        if (!inBounds(cell.x, cell.y)) {
+          continue;
+        }
+        set.add(`${cell.x},${cell.y}`);
+      }
+    }
+    return set;
+  }, [placed]);
+
+  const {
+    isDragging,
+    dragItemId,
+    pointer,
+    anchor,
+    rot,
+    startDrag,
+    rotateDrag,
+    setAnchor,
+  } = useDragSession({
+    onPointerUp: (sessionState) => {
+      const preview = dragPreviewRef.current;
+      if (!preview || !sessionState.dragItemId || !preview.anchor || !preview.valid) {
+        return;
+      }
+      addPlaced(
+        sessionState.dragItemId,
+        preview.anchor.x,
+        preview.anchor.y,
+        sessionState.rot,
+      );
+    },
+  });
+
+  const dragItem = dragItemId ? itemsById[dragItemId] : null;
+
+  const dragPreview = useMemo(() => {
+    if (!dragItemId || !dragItem) {
+      return null;
+    }
+
+    const cells: Cell[] =
+      anchor == null
+        ? []
+        : getOccupiedCells({
+            anchor,
+            shapeCells: dragItem.shape.cells,
+            pivot: dragItem.shape.pivot,
+            rot,
+          });
+
+    const hasOutOfBounds = cells.some((cell) => !inBounds(cell.x, cell.y));
+    const hasOverlap = cells.some(
+      (cell) => inBounds(cell.x, cell.y) && placedCellSet.has(`${cell.x},${cell.y}`),
+    );
+    const lockedCellCount = cells.filter(
+      (cell) => inBounds(cell.x, cell.y) && !unlocked.includes(toIndex(cell.x, cell.y)),
+    ).length;
+    const valid = anchor != null && !hasOutOfBounds && !hasOverlap;
+
+    const issues: string[] = [];
+    if (anchor == null) {
+      issues.push("outside-board");
+    }
+    if (hasOutOfBounds) {
+      issues.push("out-of-bounds");
+    }
+    if (hasOverlap) {
+      issues.push("overlap");
+    }
+    if (lockedCellCount > 0) {
+      issues.push("locked-cells-warning");
+    }
+
+    const tone: "valid" | "invalid" | "warning" = !valid
+      ? "invalid"
+      : lockedCellCount > 0
+        ? "warning"
+        : "valid";
+
+    return {
+      itemId: dragItemId,
+      anchor,
+      rot,
+      cells,
+      valid,
+      tone,
+      issues,
+    };
+  }, [anchor, dragItem, dragItemId, placedCellSet, rot, unlocked]);
+
+  useEffect(() => {
+    dragPreviewRef.current = dragPreview
+      ? { anchor: dragPreview.anchor, valid: dragPreview.valid }
+      : null;
+  }, [dragPreview]);
+
+  useEffect(() => {
+    if (!isDragging) {
+      setAnchor(null);
+      return;
+    }
+
+    if (!boardRect) {
+      setAnchor(null);
+      return;
+    }
+
+    const pointerX = pointer?.x ?? DEFAULT_POINTER.x;
+    const pointerY = pointer?.y ?? DEFAULT_POINTER.y;
+    const cellSize = boardRect.width / GRID_W;
+    const relativeX = pointerX - boardRect.left;
+    const relativeY = pointerY - boardRect.top;
+    const isOutside =
+      relativeX < 0 ||
+      relativeY < 0 ||
+      relativeX >= boardRect.width ||
+      relativeY >= boardRect.height;
+
+    if (isOutside) {
+      setAnchor(null);
+      return;
+    }
+
+    const nextAnchor = {
+      x: Math.floor(relativeX / cellSize),
+      y: Math.floor(relativeY / cellSize),
+    };
+    setAnchor(nextAnchor);
+  }, [boardRect, isDragging, pointer, setAnchor]);
 
   const showLinkFeedback = (message: string) => {
     setLinkFeedback(message);
@@ -100,19 +253,31 @@ export const PlannerShell = () => {
 
       if (key === "r") {
         event.preventDefault();
-        rotateSelected(event.shiftKey ? "ccw" : "cw");
+        if (isDragging) {
+          rotateDrag(event.shiftKey ? "ccw" : "cw");
+        } else {
+          rotateSelected(event.shiftKey ? "ccw" : "cw");
+        }
         return;
       }
 
       if (key === "q") {
         event.preventDefault();
-        rotateSelected("ccw");
+        if (isDragging) {
+          rotateDrag("ccw");
+        } else {
+          rotateSelected("ccw");
+        }
         return;
       }
 
       if (key === "e") {
         event.preventDefault();
-        rotateSelected("cw");
+        if (isDragging) {
+          rotateDrag("cw");
+        } else {
+          rotateSelected("cw");
+        }
         return;
       }
 
@@ -139,7 +304,16 @@ export const PlannerShell = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, removePlaced, rotateSelected, select, selectedInstanceId, setMode]);
+  }, [
+    isDragging,
+    mode,
+    removePlaced,
+    rotateDrag,
+    rotateSelected,
+    select,
+    selectedInstanceId,
+    setMode,
+  ]);
 
   useEffect(() => {
     if (didLoadFromUrlRef.current) {
@@ -206,8 +380,16 @@ export const PlannerShell = () => {
     setFullTrinket(slot, itemId);
   };
 
+  const handleBoardRect = useCallback((rect: DOMRect) => {
+    setBoardRect(rect);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-zinc-50 px-6 py-8">
+    <div
+      className={`min-h-screen bg-zinc-50 px-6 py-8 ${
+        isDragging ? "cursor-grabbing select-none" : ""
+      }`}
+    >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2">
           <div className="flex items-center gap-2">
@@ -267,7 +449,7 @@ export const PlannerShell = () => {
         </header>
         <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
           Locked cells are not usable until unlocked (warning only). Press R/Q/E
-          to rotate selected tile.
+          to rotate selected tile. While dragging, rotation applies to the ghost.
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
@@ -277,6 +459,13 @@ export const PlannerShell = () => {
             </h2>
             <ItemLibrary
               onPick={setPickedItemId}
+              onDragStart={(itemId, event) => {
+                if (mode !== "build") {
+                  return;
+                }
+                setPickedItemId(itemId);
+                startDrag(itemId, event);
+              }}
               selectedItemId={pickedItemId}
               mode="full"
             />
@@ -376,7 +565,23 @@ export const PlannerShell = () => {
             ) : null}
           </aside>
           <div className="flex justify-center">
-            <Board issues={validation.issues} />
+            <Board
+              issues={validation.issues}
+              onBoardRect={handleBoardRect}
+              dragPreview={
+                dragPreview
+                  ? {
+                      itemId: dragPreview.itemId,
+                      anchor: dragPreview.anchor,
+                      rot: dragPreview.rot,
+                      valid: dragPreview.valid,
+                      cells: dragPreview.cells,
+                      tone: dragPreview.tone,
+                      issues: dragPreview.issues,
+                    }
+                  : undefined
+              }
+            />
           </div>
           <aside className="flex min-w-[280px] flex-col gap-4">
             <TrinketSlots
@@ -393,6 +598,18 @@ export const PlannerShell = () => {
           </aside>
         </div>
       </div>
+      {isDragging && dragItem ? (
+        <div
+          className="pointer-events-none fixed z-50 rounded-md border border-zinc-300 bg-white/95 px-2 py-1 text-xs font-semibold text-zinc-700 shadow-sm"
+          style={{
+            left: pointer.x + 14,
+            top: pointer.y + 14,
+          }}
+          aria-hidden="true"
+        >
+          {dragItem.name}
+        </div>
+      ) : null}
     </div>
   );
 };
