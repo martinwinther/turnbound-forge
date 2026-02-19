@@ -76,6 +76,7 @@ export const PlannerShell = () => {
     dragKind,
     dragItemId,
     dragInstanceId,
+    dragGrabOffset,
     pointer,
     anchor,
     rot,
@@ -246,12 +247,19 @@ export const PlannerShell = () => {
       return;
     }
 
-    const nextAnchor = {
+    const pointerCell = {
       x: Math.floor(relativeX / cellSize),
       y: Math.floor(relativeY / cellSize),
     };
+    const nextAnchor =
+      dragKind === "placed"
+        ? {
+            x: pointerCell.x - dragGrabOffset.x,
+            y: pointerCell.y - dragGrabOffset.y,
+          }
+        : pointerCell;
     setAnchor(nextAnchor);
-  }, [boardRect, isDragging, pointer, setAnchor]);
+  }, [boardRect, dragGrabOffset, dragKind, isDragging, pointer, setAnchor]);
 
   const showLinkFeedback = (message: string) => {
     setLinkFeedback(message);
@@ -610,11 +618,11 @@ export const PlannerShell = () => {
               onBoardRect={handleBoardRect}
               canDragPlaced={mode === "build"}
               hiddenInstanceId={draggedPlacedInstanceId}
-              onPlacedDragStart={(instanceId, event) => {
+              onPlacedDragStart={(instanceId, grabbedCell, event) => {
                 if (mode !== "build") {
                   return;
                 }
-                startPlacedDrag(instanceId, event);
+                startPlacedDrag(instanceId, event, grabbedCell);
               }}
               dragPreview={
                 dragPreview

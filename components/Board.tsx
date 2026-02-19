@@ -50,7 +50,11 @@ type BoardProps = {
   onBoardRect?: (rect: DOMRect) => void;
   canDragPlaced?: boolean;
   hiddenInstanceId?: string | null;
-  onPlacedDragStart?: (instanceId: string, event: PointerEvent) => void;
+  onPlacedDragStart?: (
+    instanceId: string,
+    grabbedCell: { x: number; y: number },
+    event: PointerEvent,
+  ) => void;
 };
 
 const DRAG_THRESHOLD_PX = 6;
@@ -169,6 +173,7 @@ export const Board = ({
 
   const startPlacedDragWithThreshold = (
     instanceId: string,
+    grabbedCell: { x: number; y: number },
     startPointerX: number,
     startPointerY: number,
     pointerId: number,
@@ -193,7 +198,7 @@ export const Board = ({
 
       didStartDrag = true;
       suppressClickInstanceIdRef.current = instanceId;
-      onPlacedDragStart?.(instanceId, event);
+      onPlacedDragStart?.(instanceId, grabbedCell, event);
     };
 
     const cleanup = () => {
@@ -299,6 +304,7 @@ export const Board = ({
 
                   startPlacedDragWithThreshold(
                     topTile.instanceId,
+                    { x, y },
                     event.clientX,
                     event.clientY,
                     event.pointerId,

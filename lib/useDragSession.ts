@@ -20,6 +20,7 @@ export type DragSessionState = {
   dragItemId: string | null;
   dragInstanceId: string | null;
   origin: DragOrigin;
+  dragGrabOffset: Point;
   pointer: Point;
   anchor: DragAnchor;
   rot: Rotation;
@@ -52,6 +53,7 @@ const defaultSessionState: DragSessionState = {
   dragItemId: null,
   dragInstanceId: null,
   origin: null,
+  dragGrabOffset: { x: 0, y: 0 },
   pointer: { x: 0, y: 0 },
   anchor: null,
   rot: 0,
@@ -60,8 +62,27 @@ const defaultSessionState: DragSessionState = {
 type StartEvent = PointerEvent | React.PointerEvent;
 
 const getPointerTarget = (event: StartEvent): Element | null => {
-  const target = event.currentTarget ?? event.target;
-  return target instanceof Element ? target : null;
+  if (event.currentTarget instanceof Element) {
+    return event.currentTarget;
+  }
+
+  if (event.target instanceof Element) {
+    return event.target;
+  }
+
+  return null;
+};
+
+const isPrimaryPointerEvent = (event: StartEvent): boolean => {
+  if ("button" in event && event.button === 0) {
+    return true;
+  }
+
+  if ("buttons" in event && (event.buttons & 1) === 1) {
+    return true;
+  }
+
+  return false;
 };
 
 export const useDragSession = (options: UseDragSessionOptions = {}) => {
@@ -106,6 +127,7 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
       dragItemId: null,
       dragInstanceId: null,
       origin: null,
+      dragGrabOffset: { x: 0, y: 0 },
       anchor: null,
       rot: 0,
     }));
@@ -139,7 +161,7 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
   }, []);
 
   const startLibraryDrag = useCallback((itemId: string, startEvent: StartEvent) => {
-    if ("button" in startEvent && startEvent.button !== 0) {
+    if (!isPrimaryPointerEvent(startEvent)) {
       return;
     }
 
@@ -162,6 +184,7 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
       dragItemId: itemId,
       dragInstanceId: null,
       origin: null,
+      dragGrabOffset: { x: 0, y: 0 },
       pointer,
       anchor: null,
       rot: 0,
@@ -169,8 +192,8 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
   }, []);
 
   const startPlacedDrag = useCallback(
-    (instanceId: string, startEvent: StartEvent) => {
-      if ("button" in startEvent && startEvent.button !== 0) {
+    (instanceId: string, startEvent: StartEvent, grabbedCell?: Point) => {
+      if (!isPrimaryPointerEvent(startEvent)) {
         return;
       }
 
@@ -192,12 +215,21 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
         }
       }
 
+      const dragGrabOffset =
+        grabbedCell == null
+          ? { x: 0, y: 0 }
+          : {
+              x: grabbedCell.x - placed.origin.x,
+              y: grabbedCell.y - placed.origin.y,
+            };
+
       setSession({
         isDragging: true,
         dragKind: "placed",
         dragItemId: placed.itemId,
         dragInstanceId: instanceId,
         origin: placed.origin,
+        dragGrabOffset,
         pointer,
         anchor: null,
         rot: placed.origin.rot,
