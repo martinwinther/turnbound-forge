@@ -64,14 +64,78 @@ export const PlannerShell = () => {
   const setFullTrinket = useBuildStore((state) => state.setFullTrinket);
   const removeTrinket = useBuildStore((state) => state.removeTrinket);
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
+  const setPlacedPosition = useBuildStore((state) => state.setPlacedPosition);
+  const setPlacedRotation = useBuildStore((state) => state.setPlacedRotation);
   const dragPreviewRef = useRef<{
     anchor: Cell | null;
     valid: boolean;
   } | null>(null);
 
+  const {
+    isDragging,
+    dragKind,
+    dragItemId,
+    dragInstanceId,
+    pointer,
+    anchor,
+    rot,
+    startLibraryDrag,
+    startPlacedDrag,
+    rotateDrag,
+    setAnchor,
+  } = useDragSession({
+    resolvePlacedDrag: (instanceId) => {
+      const tile = placed.find((entry) => entry.instanceId === instanceId);
+      if (!tile) {
+        return null;
+      }
+      return {
+        itemId: tile.itemId,
+        origin: {
+          x: tile.x,
+          y: tile.y,
+          rot: tile.rot,
+        },
+      };
+    },
+    onPointerUp: (sessionState) => {
+      const preview = dragPreviewRef.current;
+      if (!preview || !preview.anchor || !preview.valid) {
+        return;
+      }
+
+      if (sessionState.dragKind === "library") {
+        if (!sessionState.dragItemId) {
+          return;
+        }
+        addPlaced(
+          sessionState.dragItemId,
+          preview.anchor.x,
+          preview.anchor.y,
+          sessionState.rot,
+        );
+        return;
+      }
+
+      if (sessionState.dragKind === "placed" && sessionState.dragInstanceId) {
+        const { dragInstanceId: instanceId } = sessionState;
+        setPlacedPosition(instanceId, preview.anchor.x, preview.anchor.y);
+        setPlacedRotation(instanceId, sessionState.rot);
+        select(instanceId);
+      }
+    },
+  });
+
+  const draggedPlacedInstanceId =
+    isDragging && dragKind === "placed" ? dragInstanceId : null;
+
   const placedCellSet = useMemo(() => {
     const set = new Set<string>();
     for (const tile of placed) {
+      if (draggedPlacedInstanceId && tile.instanceId === draggedPlacedInstanceId) {
+        continue;
+      }
+
       const item = itemsById[tile.itemId];
       if (!item) {
         continue;
@@ -90,31 +154,7 @@ export const PlannerShell = () => {
       }
     }
     return set;
-  }, [placed]);
-
-  const {
-    isDragging,
-    dragItemId,
-    pointer,
-    anchor,
-    rot,
-    startDrag,
-    rotateDrag,
-    setAnchor,
-  } = useDragSession({
-    onPointerUp: (sessionState) => {
-      const preview = dragPreviewRef.current;
-      if (!preview || !sessionState.dragItemId || !preview.anchor || !preview.valid) {
-        return;
-      }
-      addPlaced(
-        sessionState.dragItemId,
-        preview.anchor.x,
-        preview.anchor.y,
-        sessionState.rot,
-      );
-    },
-  });
+  }, [draggedPlacedInstanceId, placed]);
 
   const dragItem = dragItemId ? itemsById[dragItemId] : null;
 
@@ -464,7 +504,7 @@ export const PlannerShell = () => {
                   return;
                 }
                 setPickedItemId(itemId);
-                startDrag(itemId, event);
+                startLibraryDrag(itemId, event);
               }}
               selectedItemId={pickedItemId}
               mode="full"
@@ -568,6 +608,14 @@ export const PlannerShell = () => {
             <Board
               issues={validation.issues}
               onBoardRect={handleBoardRect}
+              canDragPlaced={mode === "build"}
+              hiddenInstanceId={draggedPlacedInstanceId}
+              onPlacedDragStart={(instanceId, event) => {
+                if (mode !== "build") {
+                  return;
+                }
+                startPlacedDrag(instanceId, event);
+              }}
               dragPreview={
                 dragPreview
                   ? {

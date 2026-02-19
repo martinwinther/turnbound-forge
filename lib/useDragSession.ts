@@ -7,16 +7,29 @@ import type { Point, Rotation } from "@/lib/types";
 type RotateDirection = "cw" | "ccw";
 
 type DragAnchor = Point | null;
+type DragKind = "none" | "library" | "placed";
+type DragOrigin = {
+  x: number;
+  y: number;
+  rot: Rotation;
+} | null;
 
 export type DragSessionState = {
   isDragging: boolean;
+  dragKind: DragKind;
   dragItemId: string | null;
+  dragInstanceId: string | null;
+  origin: DragOrigin;
   pointer: Point;
   anchor: DragAnchor;
   rot: Rotation;
 };
 
 type UseDragSessionOptions = {
+  resolvePlacedDrag?: (instanceId: string) => {
+    itemId: string;
+    origin: { x: number; y: number; rot: Rotation };
+  } | null;
   onPointerUp?: (state: DragSessionState, event: PointerEvent) => void;
 };
 
@@ -35,7 +48,10 @@ const rotate = (current: Rotation, direction: RotateDirection): Rotation => {
 
 const defaultSessionState: DragSessionState = {
   isDragging: false,
+  dragKind: "none",
   dragItemId: null,
+  dragInstanceId: null,
+  origin: null,
   pointer: { x: 0, y: 0 },
   anchor: null,
   rot: 0,
@@ -86,7 +102,10 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
     setSession((previousState) => ({
       ...previousState,
       isDragging: false,
+      dragKind: "none",
       dragItemId: null,
+      dragInstanceId: null,
+      origin: null,
       anchor: null,
       rot: 0,
     }));
@@ -119,7 +138,7 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
     }));
   }, []);
 
-  const startDrag = useCallback((itemId: string, startEvent: StartEvent) => {
+  const startLibraryDrag = useCallback((itemId: string, startEvent: StartEvent) => {
     if ("button" in startEvent && startEvent.button !== 0) {
       return;
     }
@@ -139,12 +158,53 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
 
     setSession({
       isDragging: true,
+      dragKind: "library",
       dragItemId: itemId,
+      dragInstanceId: null,
+      origin: null,
       pointer,
       anchor: null,
       rot: 0,
     });
   }, []);
+
+  const startPlacedDrag = useCallback(
+    (instanceId: string, startEvent: StartEvent) => {
+      if ("button" in startEvent && startEvent.button !== 0) {
+        return;
+      }
+
+      const placed = optionsRef.current.resolvePlacedDrag?.(instanceId);
+      if (!placed) {
+        return;
+      }
+
+      const pointer = { x: startEvent.clientX, y: startEvent.clientY };
+      const pointerTarget = getPointerTarget(startEvent);
+      pointerTargetRef.current = pointerTarget;
+      activePointerIdRef.current = startEvent.pointerId;
+
+      if (pointerTarget && "setPointerCapture" in pointerTarget) {
+        try {
+          pointerTarget.setPointerCapture(startEvent.pointerId);
+        } catch {
+          // Best effort only.
+        }
+      }
+
+      setSession({
+        isDragging: true,
+        dragKind: "placed",
+        dragItemId: placed.itemId,
+        dragInstanceId: instanceId,
+        origin: placed.origin,
+        pointer,
+        anchor: null,
+        rot: placed.origin.rot,
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!session.isDragging) {
@@ -202,7 +262,8 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
 
   return {
     ...session,
-    startDrag,
+    startLibraryDrag,
+    startPlacedDrag,
     updatePointer,
     endDrag,
     rotateDrag,

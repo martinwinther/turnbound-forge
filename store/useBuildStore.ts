@@ -28,6 +28,7 @@ type BuildState = {
   select: (instanceId: string | null) => void;
   rotateSelected: (direction: RotationDirection) => void;
   setPlacedPosition: (instanceId: string, x: number, y: number) => void;
+  setPlacedRotation: (instanceId: string, rot: Rotation) => void;
 };
 
 const startUnlocked = getStartUnlockedIndices();
@@ -224,6 +225,16 @@ export const useBuildStore = create<BuildState>((set, get) => ({
         x,
         y,
       })),
+      selectedInstanceId: instanceId,
+    }));
+  },
+  setPlacedRotation: (instanceId, rot) => {
+    set((state) => ({
+      placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
+        ...tile,
+        rot,
+      })),
+      selectedInstanceId: instanceId,
     }));
   },
 }));

@@ -48,9 +48,21 @@ type BoardProps = {
     issues?: string[];
   };
   onBoardRect?: (rect: DOMRect) => void;
+  canDragPlaced?: boolean;
+  hiddenInstanceId?: string | null;
+  onPlacedDragStart?: (instanceId: string, event: PointerEvent) => void;
 };
 
-export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => {
+const DRAG_THRESHOLD_PX = 6;
+
+export const Board = ({
+  issues = [],
+  dragPreview,
+  onBoardRect,
+  canDragPlaced = true,
+  hiddenInstanceId = null,
+  onPlacedDragStart,
+}: BoardProps) => {
   const unlocked = useBuildStore((state) => state.unlocked);
   const placed = useBuildStore((state) => state.placed);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
@@ -58,6 +70,7 @@ export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => 
   const toggleUnlocked = useBuildStore((state) => state.toggleUnlocked);
   const select = useBuildStore((state) => state.select);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const suppressClickInstanceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!onBoardRect || !gridRef.current) {
@@ -111,6 +124,10 @@ export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => 
     >();
 
     for (const tile of placed) {
+      if (hiddenInstanceId && tile.instanceId === hiddenInstanceId) {
+        continue;
+      }
+
       const item = itemsById[tile.itemId];
       if (!item) {
         console.warn(`[Board] Missing item for placed tile: ${tile.itemId}`);
@@ -148,7 +165,54 @@ export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => 
     }
 
     return byIndex;
-  }, [placed, selectedInstanceId]);
+  }, [hiddenInstanceId, placed, selectedInstanceId]);
+
+  const startPlacedDragWithThreshold = (
+    instanceId: string,
+    startPointerX: number,
+    startPointerY: number,
+    pointerId: number,
+  ) => {
+    let didStartDrag = false;
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+
+      if (didStartDrag) {
+        return;
+      }
+
+      const deltaX = event.clientX - startPointerX;
+      const deltaY = event.clientY - startPointerY;
+      const movedDistance = Math.hypot(deltaX, deltaY);
+      if (movedDistance < DRAG_THRESHOLD_PX) {
+        return;
+      }
+
+      didStartDrag = true;
+      suppressClickInstanceIdRef.current = instanceId;
+      onPlacedDragStart?.(instanceId, event);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerDone);
+      window.removeEventListener("pointercancel", handleWindowPointerDone);
+    };
+
+    const handleWindowPointerDone = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+      cleanup();
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerDone);
+    window.addEventListener("pointercancel", handleWindowPointerDone);
+  };
 
   const dragCellMap = useMemo(() => {
     const map = new Map<string, "valid" | "invalid" | "warning">();
@@ -215,6 +279,11 @@ export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => 
                 key={`${x}-${y}`}
                 type="button"
                 onClick={() => {
+                  if (topTile?.instanceId === suppressClickInstanceIdRef.current) {
+                    suppressClickInstanceIdRef.current = null;
+                    return;
+                  }
+
                   if (topTile) {
                     select(topTile.instanceId);
                     return;
@@ -222,6 +291,18 @@ export const Board = ({ issues = [], dragPreview, onBoardRect }: BoardProps) => 
 
                   select(null);
                   toggleUnlocked(index);
+                }}
+                onPointerDown={(event) => {
+                  if (!topTile || !canDragPlaced || event.button !== 0) {
+                    return;
+                  }
+
+                  startPlacedDragWithThreshold(
+                    topTile.instanceId,
+                    event.clientX,
+                    event.clientY,
+                    event.pointerId,
+                  );
                 }}
                 aria-label={getCellLabel(x, y, isHero, isUnlocked, topTile)}
                 aria-pressed={isInteractive ? isUnlocked : undefined}
