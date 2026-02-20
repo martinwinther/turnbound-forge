@@ -7,10 +7,11 @@ import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
-import { GRID_H, GRID_W, HERO_START, inBounds, toIndex } from "@/lib/grid";
+import { GRID_H, GRID_W } from "@/lib/grid";
 import type { Cell } from "@/lib/polyomino";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
+import type { BuildStateV1 } from "@/lib/types";
 import { useDragSession } from "@/lib/useDragSession";
 import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
@@ -39,8 +40,6 @@ export const PlannerShell = () => {
   const [pickedItemId, setPickedItemId] = useState<string | null>(
     items[0]?.id ?? null,
   );
-  const [devX, setDevX] = useState(HERO_START.x);
-  const [devY, setDevY] = useState(HERO_START.y);
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
   const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
@@ -129,96 +128,7 @@ export const PlannerShell = () => {
 
   const draggedPlacedInstanceId =
     isDragging && dragKind === "placed" ? dragInstanceId : null;
-
-  const placedCellSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const tile of placed) {
-      if (draggedPlacedInstanceId && tile.instanceId === draggedPlacedInstanceId) {
-        continue;
-      }
-
-      const item = itemsById[tile.itemId];
-      if (!item) {
-        continue;
-      }
-      const cells = getOccupiedCells({
-        anchor: { x: tile.x, y: tile.y },
-        shapeCells: item.shape.cells,
-        pivot: item.shape.pivot,
-        rot: tile.rot,
-      });
-      for (const cell of cells) {
-        if (!inBounds(cell.x, cell.y)) {
-          continue;
-        }
-        set.add(`${cell.x},${cell.y}`);
-      }
-    }
-    return set;
-  }, [draggedPlacedInstanceId, placed]);
-
   const dragItem = dragItemId ? itemsById[dragItemId] : null;
-
-  const dragPreview = useMemo(() => {
-    if (!dragItemId || !dragItem) {
-      return null;
-    }
-
-    const cells: Cell[] =
-      anchor == null
-        ? []
-        : getOccupiedCells({
-            anchor,
-            shapeCells: dragItem.shape.cells,
-            pivot: dragItem.shape.pivot,
-            rot,
-          });
-
-    const hasOutOfBounds = cells.some((cell) => !inBounds(cell.x, cell.y));
-    const hasOverlap = cells.some(
-      (cell) => inBounds(cell.x, cell.y) && placedCellSet.has(`${cell.x},${cell.y}`),
-    );
-    const lockedCellCount = cells.filter(
-      (cell) => inBounds(cell.x, cell.y) && !unlocked.includes(toIndex(cell.x, cell.y)),
-    ).length;
-    const valid = anchor != null && !hasOutOfBounds && !hasOverlap;
-
-    const issues: string[] = [];
-    if (anchor == null) {
-      issues.push("outside-board");
-    }
-    if (hasOutOfBounds) {
-      issues.push("out-of-bounds");
-    }
-    if (hasOverlap) {
-      issues.push("overlap");
-    }
-    if (lockedCellCount > 0) {
-      issues.push("locked-cells-warning");
-    }
-
-    const tone: "valid" | "invalid" | "warning" = !valid
-      ? "invalid"
-      : lockedCellCount > 0
-        ? "warning"
-        : "valid";
-
-    return {
-      itemId: dragItemId,
-      anchor,
-      rot,
-      cells,
-      valid,
-      tone,
-      issues,
-    };
-  }, [anchor, dragItem, dragItemId, placedCellSet, rot, unlocked]);
-
-  useEffect(() => {
-    dragPreviewRef.current = dragPreview
-      ? { anchor: dragPreview.anchor, valid: dragPreview.valid }
-      : null;
-  }, [dragPreview]);
 
   useEffect(() => {
     if (!isDragging) {
@@ -407,14 +317,145 @@ export const PlannerShell = () => {
       }),
     [unlocked, placed, trinkets],
   );
+  const baselineErrorIds = useMemo(
+    () =>
+      new Set(
+        validation.issues
+          .filter((issue) => issue.level === "error")
+          .map((issue) => issue.id),
+      ),
+    [validation.issues],
+  );
 
   const isBuildMode = mode === "build";
   const isUnlockMode = mode === "unlock";
-  const isDevelopment = process.env.NODE_ENV === "development";
   const availableTrinkets = useMemo(
     () => allTrinkets.filter((item) => item.category === "trinket"),
     [],
   );
+
+  const dragPreview = useMemo(() => {
+    if (!dragItemId || !dragItem) {
+      return null;
+    }
+
+    const cells: Cell[] =
+      anchor == null
+        ? []
+        : getOccupiedCells({
+            anchor,
+            shapeCells: dragItem.shape.cells,
+            pivot: dragItem.shape.pivot,
+            rot,
+          });
+
+    const previewInstanceId = dragKind === "library" ? "__preview__" : dragInstanceId;
+    const issues: string[] = [];
+    let blockingErrors: string[] = [];
+    let lockedWarnings = 0;
+
+    if (anchor == null || !previewInstanceId) {
+      issues.push("outside-board");
+      blockingErrors.push("Outside board");
+    } else {
+      let previewPlaced = placed;
+      if (dragKind === "library") {
+        previewPlaced = [
+          ...placed,
+          {
+            instanceId: previewInstanceId,
+            itemId: dragItemId,
+            x: anchor.x,
+            y: anchor.y,
+            rot,
+          },
+        ];
+      } else if (dragKind === "placed") {
+        previewPlaced = placed.map((tile) =>
+          tile.instanceId === previewInstanceId
+            ? {
+                ...tile,
+                x: anchor.x,
+                y: anchor.y,
+                rot,
+              }
+            : tile,
+        );
+      }
+
+      const previewState: BuildStateV1 = { v: 1, unlocked, placed: previewPlaced, trinkets };
+      const previewValidation = validateBuild({
+        state: previewState,
+        itemsById: itemsByIdAll,
+        gridW: GRID_W,
+        gridH: GRID_H,
+      });
+      const previewErrors = previewValidation.issues.filter(
+        (issue) => issue.level === "error",
+      );
+      const newErrors = previewErrors.filter((issue) => !baselineErrorIds.has(issue.id));
+      blockingErrors = newErrors.map((issue) => issue.message);
+
+      const previewLockedWarnings = previewValidation.issues.filter(
+        (issue) =>
+          issue.level === "warning" &&
+          issue.instanceId === previewInstanceId &&
+          issue.id.startsWith("locked-cell-"),
+      );
+      lockedWarnings = previewLockedWarnings.length;
+
+      if (newErrors.some((issue) => issue.id.startsWith("out-of-bounds-"))) {
+        issues.push("out-of-bounds");
+      }
+      if (newErrors.some((issue) => issue.id.startsWith("overlap-"))) {
+        issues.push("overlap");
+      }
+      if (newErrors.some((issue) => issue.id.startsWith("unique-duplicate-"))) {
+        issues.push("unique-duplicate");
+      }
+      if (newErrors.some((issue) => issue.id === "weapon-cap")) {
+        issues.push("weapon-cap");
+      }
+      if (lockedWarnings > 0) {
+        issues.push("locked-cells-warning");
+      }
+    }
+
+    const valid = anchor != null && blockingErrors.length === 0;
+    const tone: "valid" | "invalid" | "warning" = !valid
+      ? "invalid"
+      : lockedWarnings > 0
+        ? "warning"
+        : "valid";
+
+    return {
+      itemId: dragItemId,
+      anchor,
+      rot,
+      cells,
+      valid,
+      tone,
+      issues,
+      blockingReason: blockingErrors[0] ?? null,
+    };
+  }, [
+    anchor,
+    baselineErrorIds,
+    dragInstanceId,
+    dragItem,
+    dragItemId,
+    dragKind,
+    placed,
+    rot,
+    trinkets,
+    unlocked,
+  ]);
+
+  useEffect(() => {
+    dragPreviewRef.current = dragPreview
+      ? { anchor: dragPreview.anchor, valid: dragPreview.valid }
+      : null;
+  }, [dragPreview]);
 
   const handleAddTrinket = (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => {
     const item = trinketsById[itemId];
@@ -505,6 +546,7 @@ export const PlannerShell = () => {
             <h2 className="mb-3 text-sm font-semibold text-zinc-800">
               Item Library
             </h2>
+            <p className="mb-3 text-xs text-zinc-600">Drag items onto the board.</p>
             <ItemLibrary
               onPick={setPickedItemId}
               onDragStart={(itemId, event) => {
@@ -517,100 +559,6 @@ export const PlannerShell = () => {
               selectedItemId={pickedItemId}
               mode="full"
             />
-            {isDevelopment ? (
-              <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-600">
-                  Dev Tools
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex items-center gap-1">
-                    <label htmlFor="dev-x" className="sr-only">
-                      X
-                    </label>
-                    <input
-                      id="dev-x"
-                      type="number"
-                      min={0}
-                      max={GRID_W - 1}
-                      value={devX}
-                      onChange={(e) =>
-                        setDevX(Number.parseInt(e.target.value, 10) || 0)
-                      }
-                      className="w-12 rounded border border-zinc-300 px-1.5 py-1 text-xs"
-                    />
-                    <label htmlFor="dev-y" className="sr-only">
-                      Y
-                    </label>
-                    <input
-                      id="dev-y"
-                      type="number"
-                      min={0}
-                      max={GRID_H - 1}
-                      value={devY}
-                      onChange={(e) =>
-                        setDevY(Number.parseInt(e.target.value, 10) || 0)
-                      }
-                      className="w-12 rounded border border-zinc-300 px-1.5 py-1 text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        addPlaced(
-                          pickedItemId ?? items[0]?.id ?? "",
-                          devX,
-                          devY,
-                        )
-                      }
-                      className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"
-                    >
-                      Place at X,Y
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      addPlaced(
-                        pickedItemId ?? items[0]?.id ?? "",
-                        HERO_START.x + 1,
-                        HERO_START.y,
-                      )
-                    }
-                    className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700"
-                  >
-                    Add Tile
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!selectedInstanceId) {
-                        return;
-                      }
-                      removePlaced(selectedInstanceId);
-                    }}
-                    disabled={!selectedInstanceId}
-                    className="rounded-md border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Remove Selected
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => rotateSelected("cw")}
-                    disabled={!selectedInstanceId}
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Rotate CW
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => rotateSelected("ccw")}
-                    disabled={!selectedInstanceId}
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Rotate CCW
-                  </button>
-                </div>
-              </div>
-            ) : null}
           </aside>
           <div className="flex justify-center">
             <Board
@@ -663,7 +611,12 @@ export const PlannerShell = () => {
           }}
           aria-hidden="true"
         >
-          {dragItem.name}
+          <div>{dragItem.name}</div>
+          {dragPreview?.tone === "invalid" && dragPreview.blockingReason ? (
+            <div className="text-[11px] font-medium text-red-600">
+              {dragPreview.blockingReason}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
