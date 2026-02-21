@@ -65,6 +65,10 @@ export const PlannerShell = () => {
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
   const setPlacedPosition = useBuildStore((state) => state.setPlacedPosition);
   const setPlacedRotation = useBuildStore((state) => state.setPlacedRotation);
+  const undo = useBuildStore((state) => state.undo);
+  const redo = useBuildStore((state) => state.redo);
+  const canUndo = useBuildStore((state) => state.canUndo());
+  const canRedo = useBuildStore((state) => state.canRedo());
   const dragPreviewRef = useRef<{
     anchor: Cell | null;
     valid: boolean;
@@ -208,6 +212,19 @@ export const PlannerShell = () => {
       }
 
       const key = event.key.toLowerCase();
+      const isHistoryShortcut = event.metaKey || event.ctrlKey;
+
+      if (isHistoryShortcut && key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+        return;
+      }
+
+      if (isHistoryShortcut && (key === "y" || (key === "z" && event.shiftKey))) {
+        event.preventDefault();
+        redo();
+        return;
+      }
 
       if (key === "r") {
         event.preventDefault();
@@ -268,9 +285,11 @@ export const PlannerShell = () => {
     removePlaced,
     rotateDrag,
     rotateSelected,
+    redo,
     select,
     selectedInstanceId,
     setMode,
+    undo,
   ]);
 
   useEffect(() => {
@@ -511,6 +530,24 @@ export const PlannerShell = () => {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={undo}
+              disabled={!canUndo}
+              title="Undo (Ctrl/Cmd+Z)"
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={redo}
+              disabled={!canRedo}
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Redo
+            </button>
             <button
               type="button"
               onClick={handleCopyShareLink}

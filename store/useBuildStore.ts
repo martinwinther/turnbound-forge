@@ -6,16 +6,31 @@ import type { BuildStateV1, Item, Rotation } from "@/lib/types";
 type BuildMode = "build" | "unlock";
 type RotationDirection = "cw" | "ccw";
 type PlacedTile = BuildStateV1["placed"][number];
+type Snapshot = Pick<BuildStateV1, "unlocked" | "placed" | "trinkets">;
+
+type SnapshotSource = {
+  unlocked: BuildStateV1["unlocked"];
+  placed: BuildStateV1["placed"];
+  trinkets: BuildStateV1["trinkets"];
+};
 
 type BuildState = {
   unlocked: number[];
   placed: BuildStateV1["placed"];
   trinkets: BuildStateV1["trinkets"];
+  past: Snapshot[];
+  future: Snapshot[];
+  historyLimit: number;
   selectedInstanceId: string | null;
   mode: BuildMode;
   loadBuildState: (next: BuildStateV1) => void;
   getBuildState: () => BuildStateV1;
   setMode: (mode: BuildMode) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  clearHistory: () => void;
   toggleUnlocked: (index: number) => void;
   resetUnlockedToStart: () => void;
   addPlaced: (itemId: string, x: number, y: number, rot?: Rotation) => void;
@@ -33,6 +48,7 @@ type BuildState = {
 
 const startUnlocked = getStartUnlockedIndices();
 const rotations: Rotation[] = [0, 90, 180, 270];
+const DEFAULT_HISTORY_LIMIT = 100;
 
 const createInstanceId = (): string => {
   if (globalThis.crypto?.randomUUID) {
@@ -98,19 +114,117 @@ const sortTrinkets = (
   });
 };
 
+const makeSnapshot = (state: SnapshotSource): Snapshot => {
+  return {
+    unlocked: sortUnlocked(state.unlocked),
+    placed: sortPlaced(state.placed),
+    trinkets: sortTrinkets(state.trinkets),
+  };
+};
+
+const applySnapshot = (
+  snapshot: Snapshot,
+): Pick<BuildState, "unlocked" | "placed" | "trinkets" | "selectedInstanceId"> => {
+  return {
+    unlocked: [...snapshot.unlocked],
+    placed: [...snapshot.placed],
+    trinkets: [...snapshot.trinkets],
+    selectedInstanceId: null,
+  };
+};
+
+const areSnapshotsEqual = (a: Snapshot, b: Snapshot): boolean => {
+  if (a.unlocked.length !== b.unlocked.length) {
+    return false;
+  }
+  for (let index = 0; index < a.unlocked.length; index += 1) {
+    if (a.unlocked[index] !== b.unlocked[index]) {
+      return false;
+    }
+  }
+
+  if (a.placed.length !== b.placed.length) {
+    return false;
+  }
+  for (let index = 0; index < a.placed.length; index += 1) {
+    const left = a.placed[index];
+    const right = b.placed[index];
+    if (
+      left.instanceId !== right.instanceId ||
+      left.itemId !== right.itemId ||
+      left.x !== right.x ||
+      left.y !== right.y ||
+      left.rot !== right.rot
+    ) {
+      return false;
+    }
+  }
+
+  if (a.trinkets.length !== b.trinkets.length) {
+    return false;
+  }
+  for (let index = 0; index < a.trinkets.length; index += 1) {
+    const left = a.trinkets[index];
+    const right = b.trinkets[index];
+    if (
+      left.slot !== right.slot ||
+      left.half !== right.half ||
+      left.itemId !== right.itemId
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const clampHistory = (history: Snapshot[], historyLimit: number): Snapshot[] => {
+  if (history.length <= historyLimit) {
+    return history;
+  }
+  return history.slice(history.length - historyLimit);
+};
+
+const commitSnapshotChange = (
+  state: BuildState,
+  nextSource: SnapshotSource,
+  nextSelectedInstanceId: string | null = state.selectedInstanceId,
+): Partial<BuildState> => {
+  const currentSnapshot = makeSnapshot(state);
+  const nextSnapshot = makeSnapshot(nextSource);
+  const hasMeaningfulChange = !areSnapshotsEqual(currentSnapshot, nextSnapshot);
+
+  if (!hasMeaningfulChange) {
+    if (nextSelectedInstanceId === state.selectedInstanceId) {
+      return {};
+    }
+    return { selectedInstanceId: nextSelectedInstanceId };
+  }
+
+  return {
+    ...applySnapshot(nextSnapshot),
+    selectedInstanceId: nextSelectedInstanceId,
+    past: clampHistory([...state.past, currentSnapshot], state.historyLimit),
+    future: [],
+  };
+};
+
 export const useBuildStore = create<BuildState>((set, get) => ({
   unlocked: startUnlocked,
   placed: [],
   trinkets: [],
+  past: [],
+  future: [],
+  historyLimit: DEFAULT_HISTORY_LIMIT,
   selectedInstanceId: null,
   mode: "build",
   loadBuildState: (next) => {
+    const snapshot = makeSnapshot(next);
     set((state) => ({
       mode: state.mode,
-      unlocked: [...next.unlocked],
-      placed: [...next.placed],
-      trinkets: [...next.trinkets],
-      selectedInstanceId: null,
+      ...applySnapshot(snapshot),
+      past: [],
+      future: [],
     }));
   },
   getBuildState: () => {
@@ -123,19 +237,72 @@ export const useBuildStore = create<BuildState>((set, get) => ({
     };
   },
   setMode: (mode) => set({ mode }),
+  undo: () => {
+    set((state) => {
+      if (state.past.length === 0) {
+        return {};
+      }
+
+      const previous = state.past[state.past.length - 1];
+      const currentSnapshot = makeSnapshot(state);
+      return {
+        ...applySnapshot(previous),
+        past: state.past.slice(0, -1),
+        future: [currentSnapshot, ...state.future],
+      };
+    });
+  },
+  redo: () => {
+    set((state) => {
+      if (state.future.length === 0) {
+        return {};
+      }
+
+      const [next, ...rest] = state.future;
+      const currentSnapshot = makeSnapshot(state);
+      return {
+        ...applySnapshot(next),
+        past: clampHistory([...state.past, currentSnapshot], state.historyLimit),
+        future: rest,
+      };
+    });
+  },
+  canUndo: () => get().past.length > 0,
+  canRedo: () => get().future.length > 0,
+  clearHistory: () => set({ past: [], future: [] }),
   toggleUnlocked: (index) => {
     if (get().mode !== "unlock") {
       return;
     }
     set((state) => {
       const isUnlocked = state.unlocked.includes(index);
-      if (isUnlocked) {
-        return { unlocked: state.unlocked.filter((value) => value !== index) };
-      }
-      return { unlocked: [...state.unlocked, index] };
+      const nextUnlocked = isUnlocked
+        ? state.unlocked.filter((value) => value !== index)
+        : [...state.unlocked, index];
+
+      return commitSnapshotChange(
+        state,
+        {
+          unlocked: nextUnlocked,
+          placed: state.placed,
+          trinkets: state.trinkets,
+        },
+        state.selectedInstanceId,
+      );
     });
   },
-  resetUnlockedToStart: () => set({ unlocked: startUnlocked }),
+  resetUnlockedToStart: () =>
+    set((state) => {
+      return commitSnapshotChange(
+        state,
+        {
+          unlocked: startUnlocked,
+          placed: state.placed,
+          trinkets: state.trinkets,
+        },
+        state.selectedInstanceId,
+      );
+    }),
   addPlaced: (itemId, x, y, rot = 0) => {
     const tile: PlacedTile = {
       instanceId: createInstanceId(),
@@ -145,17 +312,33 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       rot,
     };
 
-    set((state) => ({
-      placed: [...state.placed, tile],
-      selectedInstanceId: tile.instanceId,
-    }));
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: [...state.placed, tile],
+          trinkets: state.trinkets,
+        },
+        tile.instanceId,
+      ),
+    );
   },
   removePlaced: (instanceId) => {
-    set((state) => ({
-      placed: state.placed.filter((tile) => tile.instanceId !== instanceId),
-      selectedInstanceId:
-        state.selectedInstanceId === instanceId ? null : state.selectedInstanceId,
-    }));
+    set((state) => {
+      const nextSelectedInstanceId =
+        state.selectedInstanceId === instanceId ? null : state.selectedInstanceId;
+
+      return commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: state.placed.filter((tile) => tile.instanceId !== instanceId),
+          trinkets: state.trinkets,
+        },
+        nextSelectedInstanceId,
+      );
+    });
   },
   addTrinket: (slot, half, item) => {
     if (item.isHalfTrinket) {
@@ -165,20 +348,34 @@ export const useBuildStore = create<BuildState>((set, get) => ({
     get().setFullTrinket(slot, item.id);
   },
   setTrinket: (slot, half, itemId) => {
-    set((state) => ({
-      trinkets: setHalfTrinket(state.trinkets, slot, half, itemId),
-    }));
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: state.placed,
+          trinkets: setHalfTrinket(state.trinkets, slot, half, itemId),
+        },
+        state.selectedInstanceId,
+      ),
+    );
   },
   setFullTrinket: (slot, itemId) => {
     set((state) => {
       const withoutSlot = state.trinkets.filter((t) => t.slot !== slot);
-      return {
-        trinkets: [
-          ...withoutSlot,
-          { slot, half: 0, itemId },
-          { slot, half: 1, itemId },
-        ],
-      };
+      return commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: state.placed,
+          trinkets: [
+            ...withoutSlot,
+            { slot, half: 0, itemId },
+            { slot, half: 1, itemId },
+          ],
+        },
+        state.selectedInstanceId,
+      );
     });
   },
   removeTrinket: (slot, half) => {
@@ -192,17 +389,31 @@ export const useBuildStore = create<BuildState>((set, get) => ({
         other != null &&
         selected.itemId === other.itemId;
 
-      return {
-        trinkets: shouldClearSlot
-          ? state.trinkets.filter((t) => t.slot !== slot)
-          : state.trinkets.filter((t) => !(t.slot === slot && t.half === half)),
-      };
+      return commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: state.placed,
+          trinkets: shouldClearSlot
+            ? state.trinkets.filter((t) => t.slot !== slot)
+            : state.trinkets.filter((t) => !(t.slot === slot && t.half === half)),
+        },
+        state.selectedInstanceId,
+      );
     });
   },
   clearTrinketSlot: (slot) => {
-    set((state) => ({
-      trinkets: state.trinkets.filter((t) => t.slot !== slot),
-    }));
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: state.placed,
+          trinkets: state.trinkets.filter((t) => t.slot !== slot),
+        },
+        state.selectedInstanceId,
+      ),
+    );
   },
   select: (instanceId) => set({ selectedInstanceId: instanceId }),
   rotateSelected: (direction) => {
@@ -211,30 +422,52 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       return;
     }
 
-    set((state) => ({
-      placed: updatePlacedTile(state.placed, selectedInstanceId, (tile) => ({
-        ...tile,
-        rot: rotate(tile.rot, direction),
-      })),
-    }));
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: updatePlacedTile(state.placed, selectedInstanceId, (tile) => ({
+            ...tile,
+            rot: rotate(tile.rot, direction),
+          })),
+          trinkets: state.trinkets,
+        },
+        state.selectedInstanceId,
+      ),
+    );
   },
   setPlacedPosition: (instanceId, x, y) => {
-    set((state) => ({
-      placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
-        ...tile,
-        x,
-        y,
-      })),
-      selectedInstanceId: instanceId,
-    }));
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
+            ...tile,
+            x,
+            y,
+          })),
+          trinkets: state.trinkets,
+        },
+        instanceId,
+      ),
+    );
   },
   setPlacedRotation: (instanceId, rot) => {
-    set((state) => ({
-      placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
-        ...tile,
-        rot,
-      })),
-      selectedInstanceId: instanceId,
-    }));
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          unlocked: state.unlocked,
+          placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
+            ...tile,
+            rot,
+          })),
+          trinkets: state.trinkets,
+        },
+        instanceId,
+      ),
+    );
   },
 }));
