@@ -234,7 +234,7 @@ export const Board = ({
   }, [dragPreview]);
 
   return (
-    <div className="inline-block rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+    <div className="inline-block rounded-xl border border-zinc-800 bg-zinc-900/85 p-4 shadow-[0_16px_30px_rgba(0,0,0,0.32)]">
       <div ref={gridRef} className="grid grid-cols-7 gap-1">
         {Array.from({ length: GRID_H }).map((_, y) =>
           Array.from({ length: GRID_W }).map((__, x) => {
@@ -251,33 +251,35 @@ export const Board = ({
             const dragTone = dragCellMap.get(cellKey(x, y));
 
             const baseClasses =
-              "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-md border text-xs font-semibold uppercase transition";
+              "relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-md border text-[10px] font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
             const stateClasses = isUnlocked
-              ? "border-zinc-200 bg-emerald-50 text-emerald-900"
-              : "border-zinc-300 bg-zinc-100 text-zinc-400";
+              ? "border-zinc-700 bg-zinc-900/70 text-zinc-300"
+              : "border-zinc-800 bg-zinc-950 text-zinc-500 bg-[linear-gradient(135deg,rgba(63,63,70,0.42)_25%,transparent_25%,transparent_50%,rgba(63,63,70,0.42)_50%,rgba(63,63,70,0.42)_75%,transparent_75%,transparent)] bg-[length:8px_8px]";
             const heroClasses = isHero
-              ? "border-indigo-400 bg-indigo-100 text-indigo-900"
+              ? "border-amber-400/80 shadow-[0_0_14px_rgba(251,146,60,0.45)]"
               : "";
             const selectedClasses = isSelected
-              ? "border-sky-600 ring-2 ring-sky-500 ring-inset"
+              ? "border-sky-400 ring-2 ring-sky-400/80 ring-inset"
               : "";
             const issueClasses =
               issueLevel === "error"
-                ? "ring-2 ring-red-500 ring-inset bg-red-100/80"
+                ? "ring-2 ring-red-500 ring-inset bg-red-500/20"
                 : issueLevel === "warning"
-                  ? "ring-2 ring-amber-400 ring-inset bg-amber-50/80"
+                  ? "ring-2 ring-amber-400 ring-inset bg-amber-400/20"
                   : "";
             const dragClasses =
               dragTone === "invalid"
-                ? "ring-2 ring-red-500 ring-inset bg-red-300/45"
+                ? "ring-2 ring-red-500 ring-inset bg-red-500/40"
                 : dragTone === "warning"
-                  ? "ring-2 ring-amber-500 ring-inset bg-amber-200/45"
+                  ? "ring-2 ring-amber-500 ring-inset bg-amber-500/38"
                   : dragTone === "valid"
-                    ? "ring-2 ring-emerald-500 ring-inset bg-emerald-300/45"
+                    ? "ring-2 ring-emerald-500 ring-inset bg-emerald-500/35"
                     : "";
             const hoverClasses = isInteractive && !hasTile
-              ? "hover:border-emerald-400 hover:bg-emerald-100"
-              : "cursor-pointer";
+              ? "hover:border-emerald-400 hover:bg-emerald-500/18"
+              : hasTile
+                ? "cursor-pointer hover:border-sky-400/70"
+                : "cursor-pointer hover:border-zinc-500";
 
             return (
               <button
@@ -318,23 +320,23 @@ export const Board = ({
                 {hasTile ? (
                   <span
                     className={`absolute inset-0 ${
-                      isSelected ? "bg-sky-300/50" : "bg-sky-200/40"
+                      isSelected ? "bg-sky-400/35" : "bg-sky-700/20"
                     }`}
                   />
                 ) : null}
                 {topTile?.isAnchor ? (
-                  <span className="pointer-events-none absolute bottom-0 left-0 right-0 truncate bg-zinc-900/70 px-1 py-0.5 text-[9px] font-semibold normal-case text-white">
+                  <span className="pointer-events-none absolute bottom-0 left-0 right-0 truncate bg-zinc-950/80 px-1 py-0.5 text-[9px] font-semibold normal-case text-zinc-100">
                     {topTile.itemName}
                   </span>
                 ) : null}
                 {isSelectedAnchor ? (
                   <span
-                    className="pointer-events-none absolute left-1 top-1 h-2.5 w-2.5 rounded-full border border-sky-700 bg-white"
+                    className="pointer-events-none absolute left-1 top-1 h-2.5 w-2.5 rounded-full border border-sky-300 bg-sky-100"
                     aria-hidden="true"
                   />
                 ) : null}
                 {isHero ? (
-                  <span className="relative z-10 rounded bg-indigo-700 px-1 py-0.5 text-[9px] text-white">
+                  <span className="relative z-10 rounded-full border border-amber-300/70 bg-amber-500/20 px-1.5 py-0.5 text-[9px] text-amber-200">
                     HERO
                   </span>
                 ) : null}
@@ -343,8 +345,8 @@ export const Board = ({
           }),
         )}
       </div>
-      <div className="mt-3 text-xs text-zinc-500">
-        Mode: <span className="font-medium capitalize">{mode}</span>
+      <div className="mt-3 text-xs text-zinc-400">
+        Mode: <span className="font-semibold capitalize text-zinc-200">{mode}</span>
       </div>
     </div>
   );

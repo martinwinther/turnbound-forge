@@ -83,12 +83,12 @@ export function ItemLibrary({
         placeholder="Search by name..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-400"
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
         aria-label="Search items by name"
       />
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-600">
+        <label className="mb-1 block text-xs font-medium text-zinc-400">
           Category
         </label>
         <select
@@ -96,7 +96,7 @@ export function ItemLibrary({
           onChange={(e) =>
             setCategory((e.target.value === "all" ? "all" : e.target.value) as ItemCategory | "all")
           }
-          className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-700"
+          className="w-full rounded-md border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
           aria-label="Filter by category"
         >
           <option value="all">All</option>
@@ -110,7 +110,7 @@ export function ItemLibrary({
 
       {!isCompact && availableTags.length > 0 && (
         <div>
-          <span className="mb-1 block text-xs font-medium text-zinc-600">
+          <span className="mb-1 block text-xs font-medium text-zinc-400">
             Tags (match all)
           </span>
           <div className="flex flex-wrap gap-1.5">
@@ -123,8 +123,8 @@ export function ItemLibrary({
                   onClick={() => toggleTag(tag)}
                   className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
                     isSelected
-                      ? "bg-zinc-800 text-white"
-                      : "border border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400"
+                      ? "border border-amber-300/80 bg-amber-400/90 text-zinc-950 shadow-[0_0_12px_rgba(251,146,60,0.35)]"
+                      : "border border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500"
                   }`}
                   aria-pressed={isSelected}
                 >
@@ -191,19 +191,25 @@ export function ItemLibrary({
                     }
                   }}
                   aria-pressed={isSelected}
-                  className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition ${
+                  className={`relative flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 ${
                     isSelected
-                      ? "border-zinc-900 bg-zinc-100 font-medium text-zinc-900"
-                      : "border-transparent bg-transparent text-zinc-700 hover:bg-zinc-50"
+                      ? "border-amber-300/70 bg-zinc-800/90 font-medium text-zinc-100"
+                      : "border-zinc-800/70 bg-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800/70"
                   }`}
                 >
+                  {isSelected ? (
+                    <span
+                      className="absolute bottom-1 left-0 top-1 w-1 rounded-r bg-amber-400"
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   <ShapePreview
                     cells={item.shape.cells}
                     size={isCompact ? 8 : 10}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{item.name}</div>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-400">
                       <span>{item.category}</span>
                       {tagSnippet.length > 0 && (
                         <span className="truncate">
@@ -218,7 +224,7 @@ export function ItemLibrary({
           })}
         </ul>
         {filteredItems.length === 0 && (
-          <p className="py-4 text-center text-sm text-zinc-500">
+          <p className="py-4 text-center text-sm text-zinc-400">
             No items match the filters.
           </p>
         )}

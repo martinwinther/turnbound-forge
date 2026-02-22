@@ -17,7 +17,11 @@ import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
 
 const modeButtonBase =
-  "rounded-md border px-4 py-2 text-sm font-semibold transition";
+  "rounded-md border px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+const actionButtonBase =
+  "rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:cursor-not-allowed disabled:opacity-45";
+const keyHintClass =
+  "rounded-full border border-zinc-600/80 bg-zinc-900/80 px-2 py-0.5 text-[11px] font-medium text-zinc-300";
 
 const itemsByIdAll = { ...itemsById, ...trinketsById };
 const interactiveTextSelector =
@@ -494,14 +498,14 @@ export const PlannerShell = () => {
 
   return (
     <div
-      className={`min-h-screen bg-zinc-50 px-6 py-8 ${
+      className={`px-4 py-6 sm:px-6 sm:py-8 ${
         isDragging ? "cursor-grabbing select-none" : ""
       }`}
     >
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5">
+        <header className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 shadow-[0_12px_28px_rgba(0,0,0,0.28)] lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
               Mode
             </span>
             <button
@@ -510,8 +514,8 @@ export const PlannerShell = () => {
               aria-pressed={isBuildMode}
               className={`${modeButtonBase} ${
                 isBuildMode
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-200 bg-white text-zinc-700"
+                  ? "border-amber-400/70 bg-amber-500 text-zinc-950 shadow-[0_0_20px_rgba(251,146,60,0.35)]"
+                  : "border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500"
               }`}
             >
               Build
@@ -522,20 +526,20 @@ export const PlannerShell = () => {
               aria-pressed={isUnlockMode}
               className={`${modeButtonBase} ${
                 isUnlockMode
-                  ? "border-emerald-600 bg-emerald-600 text-white"
-                  : "border-zinc-200 bg-white text-zinc-700"
+                  ? "border-emerald-500/70 bg-emerald-600 text-white"
+                  : "border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500"
               }`}
             >
               Unlock
             </button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={undo}
               disabled={!canUndo}
               title="Undo (Ctrl/Cmd+Z)"
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
             >
               Undo
             </button>
@@ -544,46 +548,49 @@ export const PlannerShell = () => {
               onClick={redo}
               disabled={!canRedo}
               title="Redo (Ctrl/Cmd+Shift+Z)"
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
             >
               Redo
             </button>
             <button
               type="button"
               onClick={handleCopyShareLink}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300"
+              className={`${actionButtonBase} border-amber-400/70 bg-amber-500 text-zinc-950 hover:bg-amber-400`}
             >
               Copy Share Link
             </button>
             <button
               type="button"
               onClick={resetUnlockedToStart}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300"
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
             >
               Reset start mask
             </button>
+            <span className={keyHintClass}>R rotate</span>
+            <span className={keyHintClass}>Q/E rotate</span>
+            <span className={keyHintClass}>Del remove</span>
             {linkFeedback ? (
               <span
                 role="status"
                 aria-live="polite"
-                className="text-xs font-medium text-zinc-600"
+                className="text-xs font-semibold text-amber-300"
               >
                 {linkFeedback}
               </span>
             ) : null}
           </div>
         </header>
-        <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2 text-xs text-zinc-300">
           Locked cells are not usable until unlocked (warning only). Press R/Q/E
           to rotate selected tile. While dragging, rotation applies to the ghost.
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
-          <aside className="flex min-h-[320px] flex-col rounded-xl border border-zinc-200 bg-white p-4">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-800">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_360px]">
+          <aside className="flex min-h-[320px] flex-col rounded-xl border border-zinc-800 bg-zinc-900/80 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.28)]">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-200">
               Item Library
             </h2>
-            <p className="mb-3 text-xs text-zinc-600">Drag items onto the board.</p>
+            <p className="mb-3 text-xs text-zinc-400">Drag items onto the board.</p>
             <ItemLibrary
               onPick={setPickedItemId}
               onDragStart={(itemId, event) => {
@@ -597,7 +604,7 @@ export const PlannerShell = () => {
               mode="full"
             />
           </aside>
-          <div className="flex justify-center">
+          <div className="flex justify-center lg:justify-start xl:justify-center">
             <Board
               issues={validation.issues}
               onBoardRect={handleBoardRect}
@@ -624,7 +631,7 @@ export const PlannerShell = () => {
               }
             />
           </div>
-          <aside className="flex min-w-[280px] flex-col gap-4">
+          <aside className="flex min-w-[280px] flex-col gap-4 lg:col-span-2 xl:col-span-1">
             <TrinketSlots
               trinkets={trinkets}
               onAdd={handleAddTrinket}
@@ -641,7 +648,7 @@ export const PlannerShell = () => {
       </div>
       {isDragging && dragItem ? (
         <div
-          className="pointer-events-none fixed z-50 rounded-md border border-zinc-300 bg-white/95 px-2 py-1 text-xs font-semibold text-zinc-700 shadow-sm"
+          className="pointer-events-none fixed z-50 rounded-md border border-zinc-700 bg-zinc-900/95 px-2 py-1 text-xs font-semibold text-zinc-100 shadow-[0_8px_20px_rgba(0,0,0,0.45)]"
           style={{
             left: pointer.x + 14,
             top: pointer.y + 14,
@@ -650,7 +657,7 @@ export const PlannerShell = () => {
         >
           <div>{dragItem.name}</div>
           {dragPreview?.tone === "invalid" && dragPreview.blockingReason ? (
-            <div className="text-[11px] font-medium text-red-600">
+            <div className="text-[11px] font-medium text-red-400">
               {dragPreview.blockingReason}
             </div>
           ) : null}
