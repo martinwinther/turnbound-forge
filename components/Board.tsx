@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { itemsById } from "@/lib/data";
-import { HERO_START, GRID_H, GRID_W, toIndex } from "@/lib/grid";
+import { GRID_H, GRID_W, HERO_ANCHOR, isHeroCell, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
 import type { Cell } from "@/lib/polyomino";
@@ -21,7 +21,7 @@ const getCellLabel = (
   parts.push(isUnlocked ? "unlocked" : "locked");
 
   if (isHero) {
-    parts.push("hero start");
+    parts.push("hero tile");
   }
 
   if (topTile) {
@@ -235,12 +235,12 @@ export const Board = ({
 
   return (
     <div className="inline-block rounded-xl border border-zinc-800 bg-zinc-900/85 p-4 shadow-[0_16px_30px_rgba(0,0,0,0.32)]">
-      <div ref={gridRef} className="grid grid-cols-7 gap-1">
+      <div ref={gridRef} className="relative grid grid-cols-7 gap-1">
         {Array.from({ length: GRID_H }).map((_, y) =>
           Array.from({ length: GRID_W }).map((__, x) => {
             const index = toIndex(x, y);
             const isUnlocked = unlocked.includes(index);
-            const isHero = x === HERO_START.x && y === HERO_START.y;
+            const isHero = isHeroCell(x, y);
             const isInteractive = mode === "unlock";
             const occupiedEntries = occupiedByIndex.get(index) ?? [];
             const topTile = occupiedEntries[occupiedEntries.length - 1];
@@ -291,6 +291,11 @@ export const Board = ({
                     return;
                   }
 
+                  if (isHero) {
+                    select(null);
+                    return;
+                  }
+
                   if (topTile) {
                     select(topTile.instanceId);
                     return;
@@ -336,14 +341,27 @@ export const Board = ({
                   />
                 ) : null}
                 {isHero ? (
-                  <span className="relative z-10 rounded-full border border-amber-300/70 bg-amber-500/20 px-1.5 py-0.5 text-[9px] text-amber-200">
-                    HERO
-                  </span>
+                  <span
+                    className="pointer-events-none absolute inset-0 z-0 bg-amber-500/10"
+                    aria-hidden="true"
+                  />
                 ) : null}
               </button>
             );
           }),
         )}
+        <div
+          className="pointer-events-none z-20 flex items-center justify-center"
+          style={{
+            gridColumn: `${HERO_ANCHOR.x + 1} / span 2`,
+            gridRow: `${HERO_ANCHOR.y + 1} / span 2`,
+          }}
+          aria-hidden="true"
+        >
+          <span className="rounded-full border border-amber-300/70 bg-amber-500/20 px-2 py-0.5 text-[9px] font-semibold text-amber-200">
+            HERO
+          </span>
+        </div>
       </div>
       <div className="mt-3 text-xs text-zinc-400">
         Mode: <span className="font-semibold capitalize text-zinc-200">{mode}</span>

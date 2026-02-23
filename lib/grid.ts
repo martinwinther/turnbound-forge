@@ -1,7 +1,13 @@
 export const GRID_W = 7;
 export const GRID_H = 7;
 
-export const HERO_START = { x: 3, y: 3 };
+export const HERO_ANCHOR = { x: 3, y: 3 };
+export const HERO_CELLS = [
+  { x: 3, y: 3 },
+  { x: 4, y: 3 },
+  { x: 3, y: 4 },
+  { x: 4, y: 4 },
+];
 
 export const toIndex = (x: number, y: number): number => y * GRID_W + x;
 
@@ -12,6 +18,12 @@ export const fromIndex = (index: number): { x: number; y: number } => ({
 
 export const inBounds = (x: number, y: number): boolean =>
   x >= 0 && x < GRID_W && y >= 0 && y < GRID_H;
+
+export const isHeroCell = (x: number, y: number): boolean =>
+  HERO_CELLS.some((cell) => cell.x === x && cell.y === y);
+
+export const getHeroIndices = (): number[] =>
+  HERO_CELLS.map((cell) => toIndex(cell.x, cell.y));
 
 export const isStartUnlocked = (x: number, y: number): boolean => {
   const isUnlockedRow = y >= 2 && y <= 4;

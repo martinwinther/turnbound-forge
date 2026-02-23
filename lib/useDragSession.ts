@@ -91,6 +91,7 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
   const pointerTargetRef = useRef<Element | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const optionsRef = useRef(options);
+  const lastWheelRotationAtRef = useRef(0);
 
   useEffect(() => {
     optionsRef.current = options;
@@ -99,6 +100,12 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
   useEffect(() => {
     stateRef.current = session;
   }, [session]);
+
+  useEffect(() => {
+    if (!session.isDragging) {
+      lastWheelRotationAtRef.current = 0;
+    }
+  }, [session.isDragging]);
 
   const releasePointerCapture = useCallback(() => {
     const pointerId = activePointerIdRef.current;
@@ -285,6 +292,33 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
       window.removeEventListener("pointercancel", handleWindowPointerCancel);
     };
   }, [endDrag, session.isDragging, updatePointer]);
+
+  useEffect(() => {
+    if (!session.isDragging) {
+      return;
+    }
+
+    const WHEEL_ROTATION_THROTTLE_MS = 100;
+    const handleWheel = (event: WheelEvent) => {
+      if (!stateRef.current.isDragging || event.deltaY === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      const now = Date.now();
+      if (now - lastWheelRotationAtRef.current < WHEEL_ROTATION_THROTTLE_MS) {
+        return;
+      }
+
+      lastWheelRotationAtRef.current = now;
+      rotateDrag(event.deltaY > 0 ? "cw" : "ccw");
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, [rotateDrag, session.isDragging]);
 
   useEffect(() => {
     return () => {

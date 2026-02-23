@@ -1,4 +1,4 @@
-import { toIndex } from "@/lib/grid";
+import { isHeroCell, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import type { BuildStateV1, Item } from "@/lib/types";
 
@@ -157,6 +157,15 @@ export function validateBuild({
 
     for (const cell of inBoundsCells) {
       const index = toIndex(cell.x, cell.y);
+      if (isHeroCell(cell.x, cell.y)) {
+        issues.push({
+          id: `hero-cell-${tile.instanceId}-${index}`,
+          level: "error",
+          message: "Cannot place on the HERO tile.",
+          instanceId: tile.instanceId,
+          cells: [cell],
+        });
+      }
       if (!unlocked.includes(index)) {
         issues.push({
           id: `locked-cell-${tile.instanceId}-${index}`,

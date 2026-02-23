@@ -230,32 +230,23 @@ export const PlannerShell = () => {
         return;
       }
 
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        const direction = event.key === "ArrowLeft" ? "ccw" : "cw";
+        if (isDragging) {
+          rotateDrag(direction);
+        } else {
+          rotateSelected(direction);
+        }
+        return;
+      }
+
       if (key === "r") {
         event.preventDefault();
         if (isDragging) {
           rotateDrag(event.shiftKey ? "ccw" : "cw");
         } else {
           rotateSelected(event.shiftKey ? "ccw" : "cw");
-        }
-        return;
-      }
-
-      if (key === "q") {
-        event.preventDefault();
-        if (isDragging) {
-          rotateDrag("ccw");
-        } else {
-          rotateSelected("ccw");
-        }
-        return;
-      }
-
-      if (key === "e") {
-        event.preventDefault();
-        if (isDragging) {
-          rotateDrag("cw");
-        } else {
-          rotateSelected("cw");
         }
         return;
       }
@@ -566,8 +557,8 @@ export const PlannerShell = () => {
             >
               Reset start mask
             </button>
-            <span className={keyHintClass}>R rotate</span>
-            <span className={keyHintClass}>Q/E rotate</span>
+            <span className={keyHintClass}>Drag rotate: ← / → or wheel</span>
+            <span className={keyHintClass}>Also: R / Shift+R</span>
             <span className={keyHintClass}>Del remove</span>
             {linkFeedback ? (
               <span
@@ -581,8 +572,8 @@ export const PlannerShell = () => {
           </div>
         </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2 text-xs text-zinc-300">
-          Locked cells are not usable until unlocked (warning only). Press R/Q/E
-          to rotate selected tile. While dragging, rotation applies to the ghost.
+          Locked cells are not usable until unlocked (warning only). Rotate while
+          dragging: ← / → or mouse wheel. Also: R / Shift+R.
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_360px]">
