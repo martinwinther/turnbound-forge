@@ -7,7 +7,7 @@ import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
-import { GRID_H, GRID_W } from "@/lib/grid";
+import { getHeroCells, GRID_H, GRID_W } from "@/lib/grid";
 import type { Cell } from "@/lib/polyomino";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
@@ -51,6 +51,7 @@ export const PlannerShell = () => {
 
   const mode = useBuildStore((state) => state.mode);
   const unlocked = useBuildStore((state) => state.unlocked);
+  const heroAnchor = useBuildStore((state) => state.heroAnchor);
   const placed = useBuildStore((state) => state.placed);
   const trinkets = useBuildStore((state) => state.trinkets);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
@@ -61,6 +62,7 @@ export const PlannerShell = () => {
   const resetUnlockedToStart = useBuildStore(
     (state) => state.resetUnlockedToStart,
   );
+  const setHeroAnchor = useBuildStore((state) => state.setHeroAnchor);
   const addPlaced = useBuildStore((state) => state.addPlaced);
   const removePlaced = useBuildStore((state) => state.removePlaced);
   const setTrinket = useBuildStore((state) => state.setTrinket);
@@ -77,6 +79,10 @@ export const PlannerShell = () => {
     anchor: Cell | null;
     valid: boolean;
   } | null>(null);
+  const heroDragPreviewRef = useRef<{
+    anchor: Cell | null;
+    valid: boolean;
+  } | null>(null);
 
   const {
     isDragging,
@@ -89,6 +95,7 @@ export const PlannerShell = () => {
     rot,
     startLibraryDrag,
     startPlacedDrag,
+    startHeroDrag,
     rotateDrag,
     setAnchor,
   } = useDragSession({
@@ -107,6 +114,15 @@ export const PlannerShell = () => {
       };
     },
     onPointerUp: (sessionState) => {
+      if (sessionState.dragKind === "hero") {
+        const preview = heroDragPreviewRef.current;
+        if (!preview || !preview.anchor || !preview.valid) {
+          return;
+        }
+        setHeroAnchor(preview.anchor.x, preview.anchor.y);
+        return;
+      }
+
       const preview = dragPreviewRef.current;
       if (!preview || !preview.anchor || !preview.valid) {
         return;
@@ -137,6 +153,7 @@ export const PlannerShell = () => {
   const draggedPlacedInstanceId =
     isDragging && dragKind === "placed" ? dragInstanceId : null;
   const dragItem = dragItemId ? itemsById[dragItemId] : null;
+  const isDraggingHero = isDragging && dragKind === "hero";
 
   useEffect(() => {
     if (!isDragging) {
@@ -170,7 +187,7 @@ export const PlannerShell = () => {
       y: Math.floor(relativeY / cellSize),
     };
     const nextAnchor =
-      dragKind === "placed"
+      dragKind === "placed" || dragKind === "hero"
         ? {
             x: pointerCell.x - dragGrabOffset.x,
             y: pointerCell.y - dragGrabOffset.y,
@@ -233,7 +250,7 @@ export const PlannerShell = () => {
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         const direction = event.key === "ArrowLeft" ? "ccw" : "cw";
-        if (isDragging) {
+        if (isDragging && dragKind !== "hero") {
           rotateDrag(direction);
         } else {
           rotateSelected(direction);
@@ -243,7 +260,7 @@ export const PlannerShell = () => {
 
       if (key === "r") {
         event.preventDefault();
-        if (isDragging) {
+        if (isDragging && dragKind !== "hero") {
           rotateDrag(event.shiftKey ? "ccw" : "cw");
         } else {
           rotateSelected(event.shiftKey ? "ccw" : "cw");
@@ -275,6 +292,7 @@ export const PlannerShell = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    dragKind,
     isDragging,
     mode,
     removePlaced,
@@ -324,12 +342,12 @@ export const PlannerShell = () => {
   const validation = useMemo(
     () =>
       validateBuild({
-        state: { v: 1, unlocked, placed, trinkets },
+        state: { v: 1, heroAnchor, unlocked, placed, trinkets },
         itemsById: itemsByIdAll,
         gridW: GRID_W,
         gridH: GRID_H,
       }),
-    [unlocked, placed, trinkets],
+    [heroAnchor, unlocked, placed, trinkets],
   );
   const baselineErrorIds = useMemo(
     () =>
@@ -398,6 +416,7 @@ export const PlannerShell = () => {
       }
 
       const previewState: BuildStateV1 = { v: 1, unlocked, placed: previewPlaced, trinkets };
+      previewState.heroAnchor = heroAnchor;
       const previewValidation = validateBuild({
         state: previewState,
         itemsById: itemsByIdAll,
@@ -459,6 +478,7 @@ export const PlannerShell = () => {
     dragItem,
     dragItemId,
     dragKind,
+    heroAnchor,
     placed,
     rot,
     trinkets,
@@ -470,6 +490,50 @@ export const PlannerShell = () => {
       ? { anchor: dragPreview.anchor, valid: dragPreview.valid }
       : null;
   }, [dragPreview]);
+
+  const heroDragPreview = useMemo(() => {
+    if (!isDraggingHero) {
+      return null;
+    }
+
+    const candidateAnchor = anchor;
+    if (!candidateAnchor) {
+      return { anchor: null, valid: false, tone: "invalid" as const };
+    }
+
+    const heroCells = getHeroCells(candidateAnchor);
+    const isInBounds = heroCells.every(
+      (cell) => cell.x >= 0 && cell.x < GRID_W && cell.y >= 0 && cell.y < GRID_H,
+    );
+    if (!isInBounds) {
+      return { anchor: candidateAnchor, valid: false, tone: "invalid" as const };
+    }
+
+    const previewValidation = validateBuild({
+      state: { v: 1, heroAnchor: candidateAnchor, unlocked, placed, trinkets },
+      itemsById: itemsByIdAll,
+      gridW: GRID_W,
+      gridH: GRID_H,
+    });
+    const newErrors = previewValidation.issues.filter(
+      (issue) => issue.level === "error" && !baselineErrorIds.has(issue.id),
+    );
+    const valid = newErrors.length === 0;
+
+    return {
+      anchor: candidateAnchor,
+      valid,
+      tone: valid ? ("valid" as const) : ("invalid" as const),
+    };
+  }, [anchor, baselineErrorIds, isDraggingHero, placed, trinkets, unlocked]);
+
+  useEffect(() => {
+    heroDragPreviewRef.current = heroDragPreview
+      ? { anchor: heroDragPreview.anchor, valid: heroDragPreview.valid }
+      : null;
+  }, [heroDragPreview]);
+
+  const renderedHeroAnchor = heroDragPreview?.anchor ?? heroAnchor;
 
   const handleAddTrinket = (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => {
     const item = trinketsById[itemId];
@@ -597,10 +661,15 @@ export const PlannerShell = () => {
           </aside>
           <div className="flex justify-center lg:justify-start xl:justify-center">
             <Board
+              heroAnchor={renderedHeroAnchor}
               issues={validation.issues}
               onBoardRect={handleBoardRect}
               canDragPlaced={mode === "build"}
               hiddenInstanceId={draggedPlacedInstanceId}
+              heroDragTone={isDraggingHero ? heroDragPreview?.tone ?? "invalid" : null}
+              onHeroDragStart={(grabbedCell, event) => {
+                startHeroDrag(event, grabbedCell);
+              }}
               onPlacedDragStart={(instanceId, grabbedCell, event) => {
                 if (mode !== "build") {
                   return;

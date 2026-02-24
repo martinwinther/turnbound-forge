@@ -1,14 +1,18 @@
 import { create } from "zustand";
 
-import { getStartUnlockedIndices } from "@/lib/grid";
+import { getStartUnlockedIndices, HERO_ANCHOR } from "@/lib/grid";
 import type { BuildStateV1, Item, Rotation } from "@/lib/types";
 
 type BuildMode = "build" | "unlock";
 type RotationDirection = "cw" | "ccw";
 type PlacedTile = BuildStateV1["placed"][number];
-type Snapshot = Pick<BuildStateV1, "unlocked" | "placed" | "trinkets">;
+type HeroAnchor = { x: number; y: number };
+type Snapshot = Pick<BuildStateV1, "unlocked" | "placed" | "trinkets"> & {
+  heroAnchor: HeroAnchor;
+};
 
 type SnapshotSource = {
+  heroAnchor: HeroAnchor;
   unlocked: BuildStateV1["unlocked"];
   placed: BuildStateV1["placed"];
   trinkets: BuildStateV1["trinkets"];
@@ -16,6 +20,7 @@ type SnapshotSource = {
 
 type BuildState = {
   unlocked: number[];
+  heroAnchor: HeroAnchor;
   placed: BuildStateV1["placed"];
   trinkets: BuildStateV1["trinkets"];
   past: Snapshot[];
@@ -33,6 +38,7 @@ type BuildState = {
   clearHistory: () => void;
   toggleUnlocked: (index: number) => void;
   resetUnlockedToStart: () => void;
+  setHeroAnchor: (x: number, y: number) => void;
   addPlaced: (itemId: string, x: number, y: number, rot?: Rotation) => void;
   removePlaced: (instanceId: string) => void;
   addTrinket: (slot: 0 | 1 | 2, half: 0 | 1, item: Item) => void;
@@ -116,6 +122,7 @@ const sortTrinkets = (
 
 const makeSnapshot = (state: SnapshotSource): Snapshot => {
   return {
+    heroAnchor: { ...state.heroAnchor },
     unlocked: sortUnlocked(state.unlocked),
     placed: sortPlaced(state.placed),
     trinkets: sortTrinkets(state.trinkets),
@@ -124,8 +131,12 @@ const makeSnapshot = (state: SnapshotSource): Snapshot => {
 
 const applySnapshot = (
   snapshot: Snapshot,
-): Pick<BuildState, "unlocked" | "placed" | "trinkets" | "selectedInstanceId"> => {
+): Pick<
+  BuildState,
+  "heroAnchor" | "unlocked" | "placed" | "trinkets" | "selectedInstanceId"
+> => {
   return {
+    heroAnchor: { ...snapshot.heroAnchor },
     unlocked: [...snapshot.unlocked],
     placed: [...snapshot.placed],
     trinkets: [...snapshot.trinkets],
@@ -134,6 +145,10 @@ const applySnapshot = (
 };
 
 const areSnapshotsEqual = (a: Snapshot, b: Snapshot): boolean => {
+  if (a.heroAnchor.x !== b.heroAnchor.x || a.heroAnchor.y !== b.heroAnchor.y) {
+    return false;
+  }
+
   if (a.unlocked.length !== b.unlocked.length) {
     return false;
   }
@@ -210,6 +225,7 @@ const commitSnapshotChange = (
 };
 
 export const useBuildStore = create<BuildState>((set, get) => ({
+  heroAnchor: { ...HERO_ANCHOR },
   unlocked: startUnlocked,
   placed: [],
   trinkets: [],
@@ -219,7 +235,12 @@ export const useBuildStore = create<BuildState>((set, get) => ({
   selectedInstanceId: null,
   mode: "build",
   loadBuildState: (next) => {
-    const snapshot = makeSnapshot(next);
+    const snapshot = makeSnapshot({
+      heroAnchor: next.heroAnchor ?? HERO_ANCHOR,
+      unlocked: next.unlocked,
+      placed: next.placed,
+      trinkets: next.trinkets,
+    });
     set((state) => ({
       mode: state.mode,
       ...applySnapshot(snapshot),
@@ -228,9 +249,10 @@ export const useBuildStore = create<BuildState>((set, get) => ({
     }));
   },
   getBuildState: () => {
-    const { unlocked, placed, trinkets } = get();
+    const { heroAnchor, unlocked, placed, trinkets } = get();
     return {
       v: 1,
+      heroAnchor: { ...heroAnchor },
       unlocked: sortUnlocked(unlocked),
       placed: sortPlaced(placed),
       trinkets: sortTrinkets(trinkets),
@@ -283,6 +305,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       return commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: nextUnlocked,
           placed: state.placed,
           trinkets: state.trinkets,
@@ -296,6 +319,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       return commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: startUnlocked,
           placed: state.placed,
           trinkets: state.trinkets,
@@ -303,6 +327,20 @@ export const useBuildStore = create<BuildState>((set, get) => ({
         state.selectedInstanceId,
       );
     }),
+  setHeroAnchor: (x, y) => {
+    set((state) =>
+      commitSnapshotChange(
+        state,
+        {
+          heroAnchor: { x, y },
+          unlocked: state.unlocked,
+          placed: state.placed,
+          trinkets: state.trinkets,
+        },
+        state.selectedInstanceId,
+      ),
+    );
+  },
   addPlaced: (itemId, x, y, rot = 0) => {
     const tile: PlacedTile = {
       instanceId: createInstanceId(),
@@ -316,6 +354,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: [...state.placed, tile],
           trinkets: state.trinkets,
@@ -332,6 +371,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       return commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: state.placed.filter((tile) => tile.instanceId !== instanceId),
           trinkets: state.trinkets,
@@ -352,6 +392,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: state.placed,
           trinkets: setHalfTrinket(state.trinkets, slot, half, itemId),
@@ -366,6 +407,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       return commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: state.placed,
           trinkets: [
@@ -392,6 +434,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       return commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: state.placed,
           trinkets: shouldClearSlot
@@ -407,6 +450,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: state.placed,
           trinkets: state.trinkets.filter((t) => t.slot !== slot),
@@ -426,6 +470,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: updatePlacedTile(state.placed, selectedInstanceId, (tile) => ({
             ...tile,
@@ -442,6 +487,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
             ...tile,
@@ -459,6 +505,7 @@ export const useBuildStore = create<BuildState>((set, get) => ({
       commitSnapshotChange(
         state,
         {
+          heroAnchor: state.heroAnchor,
           unlocked: state.unlocked,
           placed: updatePlacedTile(state.placed, instanceId, (tile) => ({
             ...tile,

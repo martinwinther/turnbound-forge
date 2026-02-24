@@ -1,4 +1,4 @@
-import { isHeroCell, toIndex } from "@/lib/grid";
+import { HERO_ANCHOR, isHeroCell, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import type { BuildStateV1, Item } from "@/lib/types";
 
@@ -89,6 +89,7 @@ export function validateBuild({
 }: ValidateBuildArgs): ValidationResult {
   const issues: ValidationIssue[] = [];
   const { placed, unlocked, trinkets } = state;
+  const heroAnchor = state.heroAnchor ?? HERO_ANCHOR;
 
   const countedTrinkets = collectCountedTrinkets(trinkets, itemsById);
   let weaponCap = 3;
@@ -157,7 +158,7 @@ export function validateBuild({
 
     for (const cell of inBoundsCells) {
       const index = toIndex(cell.x, cell.y);
-      if (isHeroCell(cell.x, cell.y)) {
+      if (isHeroCell(cell.x, cell.y, heroAnchor)) {
         issues.push({
           id: `hero-cell-${tile.instanceId}-${index}`,
           level: "error",

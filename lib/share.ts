@@ -117,6 +117,17 @@ const isBuildStateV1 = (value: unknown): value is BuildStateV1 => {
     return false;
   }
 
+  if (candidate.heroAnchor !== undefined) {
+    if (
+      !candidate.heroAnchor ||
+      typeof candidate.heroAnchor !== "object" ||
+      !isInteger((candidate.heroAnchor as Record<string, unknown>).x) ||
+      !isInteger((candidate.heroAnchor as Record<string, unknown>).y)
+    ) {
+      return false;
+    }
+  }
+
   if (
     !Array.isArray(candidate.unlocked) ||
     !candidate.unlocked.every((index) => isInteger(index))

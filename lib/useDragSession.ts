@@ -7,7 +7,7 @@ import type { Point, Rotation } from "@/lib/types";
 type RotateDirection = "cw" | "ccw";
 
 type DragAnchor = Point | null;
-type DragKind = "none" | "library" | "placed";
+type DragKind = "none" | "library" | "placed" | "hero";
 type DragOrigin = {
   x: number;
   y: number;
@@ -245,6 +245,37 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
     [],
   );
 
+  const startHeroDrag = useCallback((startEvent: StartEvent, grabbedCell?: Point) => {
+    if (!isPrimaryPointerEvent(startEvent)) {
+      return;
+    }
+
+    const pointer = { x: startEvent.clientX, y: startEvent.clientY };
+    const pointerTarget = getPointerTarget(startEvent);
+    pointerTargetRef.current = pointerTarget;
+    activePointerIdRef.current = startEvent.pointerId;
+
+    if (pointerTarget && "setPointerCapture" in pointerTarget) {
+      try {
+        pointerTarget.setPointerCapture(startEvent.pointerId);
+      } catch {
+        // Best effort only.
+      }
+    }
+
+    setSession({
+      isDragging: true,
+      dragKind: "hero",
+      dragItemId: null,
+      dragInstanceId: null,
+      origin: null,
+      dragGrabOffset: grabbedCell == null ? { x: 0, y: 0 } : grabbedCell,
+      pointer,
+      anchor: null,
+      rot: 0,
+    });
+  }, []);
+
   useEffect(() => {
     if (!session.isDragging) {
       return;
@@ -330,6 +361,7 @@ export const useDragSession = (options: UseDragSessionOptions = {}) => {
     ...session,
     startLibraryDrag,
     startPlacedDrag,
+    startHeroDrag,
     updatePointer,
     endDrag,
     rotateDrag,

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { itemsById } from "@/lib/data";
-import { GRID_H, GRID_W, HERO_ANCHOR, isHeroCell, toIndex } from "@/lib/grid";
+import { GRID_H, GRID_W, isHeroCell, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
 import type { Cell } from "@/lib/polyomino";
@@ -37,6 +37,7 @@ const getCellLabel = (
 const cellKey = (x: number, y: number) => `${x},${y}`;
 
 type BoardProps = {
+  heroAnchor: { x: number; y: number };
   issues?: ValidationIssue[];
   dragPreview?: {
     itemId: string;
@@ -50,6 +51,11 @@ type BoardProps = {
   onBoardRect?: (rect: DOMRect) => void;
   canDragPlaced?: boolean;
   hiddenInstanceId?: string | null;
+  heroDragTone?: "valid" | "invalid" | null;
+  onHeroDragStart?: (
+    grabbedCell: { x: number; y: number },
+    event: PointerEvent,
+  ) => void;
   onPlacedDragStart?: (
     instanceId: string,
     grabbedCell: { x: number; y: number },
@@ -60,11 +66,14 @@ type BoardProps = {
 const DRAG_THRESHOLD_PX = 6;
 
 export const Board = ({
+  heroAnchor,
   issues = [],
   dragPreview,
   onBoardRect,
   canDragPlaced = true,
   hiddenInstanceId = null,
+  heroDragTone = null,
+  onHeroDragStart,
   onPlacedDragStart,
 }: BoardProps) => {
   const unlocked = useBuildStore((state) => state.unlocked);
@@ -219,6 +228,48 @@ export const Board = ({
     window.addEventListener("pointercancel", handleWindowPointerDone);
   };
 
+  const startHeroDragWithThreshold = (
+    grabbedCell: { x: number; y: number },
+    startPointerX: number,
+    startPointerY: number,
+    pointerId: number,
+  ) => {
+    let didStartDrag = false;
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId || didStartDrag) {
+        return;
+      }
+
+      const deltaX = event.clientX - startPointerX;
+      const deltaY = event.clientY - startPointerY;
+      const movedDistance = Math.hypot(deltaX, deltaY);
+      if (movedDistance < DRAG_THRESHOLD_PX) {
+        return;
+      }
+
+      didStartDrag = true;
+      onHeroDragStart?.(grabbedCell, event);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerDone);
+      window.removeEventListener("pointercancel", handleWindowPointerDone);
+    };
+
+    const handleWindowPointerDone = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+      cleanup();
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerDone);
+    window.addEventListener("pointercancel", handleWindowPointerDone);
+  };
+
   const dragCellMap = useMemo(() => {
     const map = new Map<string, "valid" | "invalid" | "warning">();
     if (!dragPreview) {
@@ -240,7 +291,7 @@ export const Board = ({
           Array.from({ length: GRID_W }).map((__, x) => {
             const index = toIndex(x, y);
             const isUnlocked = unlocked.includes(index);
-            const isHero = isHeroCell(x, y);
+            const isHero = isHeroCell(x, y, heroAnchor);
             const isInteractive = mode === "unlock";
             const occupiedEntries = occupiedByIndex.get(index) ?? [];
             const topTile = occupiedEntries[occupiedEntries.length - 1];
@@ -275,6 +326,12 @@ export const Board = ({
                   : dragTone === "valid"
                     ? "ring-2 ring-emerald-500 ring-inset bg-emerald-500/35"
                     : "";
+            const heroDragClasses =
+              isHero && heroDragTone === "invalid"
+                ? "ring-2 ring-red-500 ring-inset bg-red-500/30"
+                : isHero && heroDragTone === "valid"
+                  ? "ring-2 ring-emerald-500 ring-inset bg-emerald-500/25"
+                  : "";
             const hoverClasses = isInteractive && !hasTile
               ? "hover:border-emerald-400 hover:bg-emerald-500/18"
               : hasTile
@@ -305,6 +362,19 @@ export const Board = ({
                   toggleUnlocked(index);
                 }}
                 onPointerDown={(event) => {
+                  if (isHero && event.button === 0) {
+                    startHeroDragWithThreshold(
+                      {
+                        x: x - heroAnchor.x,
+                        y: y - heroAnchor.y,
+                      },
+                      event.clientX,
+                      event.clientY,
+                      event.pointerId,
+                    );
+                    return;
+                  }
+
                   if (!topTile || !canDragPlaced || event.button !== 0) {
                     return;
                   }
@@ -320,7 +390,7 @@ export const Board = ({
                 aria-label={getCellLabel(x, y, isHero, isUnlocked, topTile)}
                 aria-pressed={isInteractive ? isUnlocked : undefined}
                 aria-disabled={!isInteractive}
-                className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${dragClasses} ${hoverClasses}`}
+                className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${dragClasses} ${heroDragClasses} ${hoverClasses}`}
               >
                 {hasTile ? (
                   <span
@@ -353,8 +423,8 @@ export const Board = ({
         <div
           className="pointer-events-none z-20 flex items-center justify-center"
           style={{
-            gridColumn: `${HERO_ANCHOR.x + 1} / span 2`,
-            gridRow: `${HERO_ANCHOR.y + 1} / span 2`,
+            gridColumn: `${heroAnchor.x + 1} / span 2`,
+            gridRow: `${heroAnchor.y + 1} / span 2`,
           }}
           aria-hidden="true"
         >

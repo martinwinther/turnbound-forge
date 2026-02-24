@@ -48,6 +48,7 @@ export type Item = {
 export type BuildStateV1 = {
   v: 1;
   heroId?: string;
+  heroAnchor?: Point;
   unlocked: number[];
   placed: Array<{
     instanceId: string;
