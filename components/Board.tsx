@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { itemsById } from "@/lib/data";
-import { GRID_H, GRID_W, isHeroCell, toIndex } from "@/lib/grid";
+import { fromIndex, GRID_H, GRID_W, isHeroCell, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
 import type { Cell } from "@/lib/polyomino";
@@ -50,6 +50,9 @@ type BoardProps = {
   };
   onBoardRect?: (rect: DOMRect) => void;
   canDragPlaced?: boolean;
+  mode: "build" | "unlock";
+  onPaintToggle?: (indices: number[], makeUnlocked: boolean) => void;
+  onUnlockStatus?: (message: string) => void;
   hiddenInstanceId?: string | null;
   heroDragTone?: "valid" | "invalid" | null;
   onHeroDragStart?: (
@@ -71,6 +74,9 @@ export const Board = ({
   dragPreview,
   onBoardRect,
   canDragPlaced = true,
+  mode,
+  onPaintToggle,
+  onUnlockStatus,
   hiddenInstanceId = null,
   heroDragTone = null,
   onHeroDragStart,
@@ -79,11 +85,20 @@ export const Board = ({
   const unlocked = useBuildStore((state) => state.unlocked);
   const placed = useBuildStore((state) => state.placed);
   const selectedInstanceId = useBuildStore((state) => state.selectedInstanceId);
-  const mode = useBuildStore((state) => state.mode);
-  const toggleUnlocked = useBuildStore((state) => state.toggleUnlocked);
   const select = useBuildStore((state) => state.select);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const suppressClickInstanceIdRef = useRef<string | null>(null);
+  const [paintPreview, setPaintPreview] = useState<{
+    makeUnlocked: boolean;
+    indices: Set<number>;
+  } | null>(null);
+  const paintSessionRef = useRef<{
+    pointerId: number;
+    makeUnlocked: boolean;
+    visitedIndices: Set<number>;
+    appliedIndices: Set<number>;
+    hasShownOccupiedLockMessage: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!onBoardRect || !gridRef.current) {
@@ -284,13 +299,123 @@ export const Board = ({
     return map;
   }, [dragPreview]);
 
+  const resolveCellIndexFromPointer = useCallback((pointerX: number, pointerY: number) => {
+    const hitElement = document.elementFromPoint(pointerX, pointerY);
+    if (!(hitElement instanceof HTMLElement)) {
+      return null;
+    }
+
+    const cellElement = hitElement.closest<HTMLButtonElement>("[data-cell-index]");
+    if (!cellElement?.dataset.cellIndex) {
+      return null;
+    }
+
+    const cellIndex = Number.parseInt(cellElement.dataset.cellIndex, 10);
+    return Number.isNaN(cellIndex) ? null : cellIndex;
+  }, []);
+
+  const applyPaintAtIndex = useCallback(
+    (index: number) => {
+      const session = paintSessionRef.current;
+      if (!session || session.visitedIndices.has(index)) {
+        return;
+      }
+
+      session.visitedIndices.add(index);
+      const { x, y } = fromIndex(index);
+      if (isHeroCell(x, y, heroAnchor)) {
+        return;
+      }
+
+      if (!session.makeUnlocked && occupiedByIndex.has(index)) {
+        if (!session.hasShownOccupiedLockMessage) {
+          onUnlockStatus?.("Can't lock occupied cells.");
+          session.hasShownOccupiedLockMessage = true;
+        }
+        return;
+      }
+
+      session.appliedIndices.add(index);
+      setPaintPreview((previous) => {
+        if (!previous || previous.makeUnlocked !== session.makeUnlocked) {
+          return previous;
+        }
+
+        const nextIndices = new Set(previous.indices);
+        nextIndices.add(index);
+        return { ...previous, indices: nextIndices };
+      });
+    },
+    [heroAnchor, occupiedByIndex, onUnlockStatus],
+  );
+
+  const endPaintSession = useCallback(
+    (pointerId: number) => {
+      const session = paintSessionRef.current;
+      if (!session || session.pointerId !== pointerId) {
+        return;
+      }
+
+      if (gridRef.current?.hasPointerCapture(pointerId)) {
+        gridRef.current.releasePointerCapture(pointerId);
+      }
+
+      const indices = Array.from(session.appliedIndices);
+      if (indices.length > 0) {
+        onPaintToggle?.(indices, session.makeUnlocked);
+      }
+
+      paintSessionRef.current = null;
+      setPaintPreview(null);
+    },
+    [onPaintToggle],
+  );
+
+  useEffect(() => {
+    if (mode !== "unlock") {
+      const activeSession = paintSessionRef.current;
+      if (
+        activeSession &&
+        gridRef.current?.hasPointerCapture(activeSession.pointerId)
+      ) {
+        gridRef.current.releasePointerCapture(activeSession.pointerId);
+      }
+      paintSessionRef.current = null;
+    }
+  }, [mode]);
+
   return (
     <div className="inline-block rounded-xl border border-zinc-800 bg-zinc-900/85 p-4 shadow-[0_16px_30px_rgba(0,0,0,0.32)]">
-      <div ref={gridRef} className="relative grid grid-cols-7 gap-1">
+      <div
+        ref={gridRef}
+        className="relative grid grid-cols-7 gap-1"
+        onPointerMove={(event) => {
+          const session = paintSessionRef.current;
+          if (!session || session.pointerId !== event.pointerId) {
+            return;
+          }
+
+          const hitIndex = resolveCellIndexFromPointer(event.clientX, event.clientY);
+          if (hitIndex == null) {
+            return;
+          }
+          applyPaintAtIndex(hitIndex);
+        }}
+        onPointerUp={(event) => {
+          endPaintSession(event.pointerId);
+        }}
+        onPointerCancel={(event) => {
+          endPaintSession(event.pointerId);
+        }}
+      >
         {Array.from({ length: GRID_H }).map((_, y) =>
           Array.from({ length: GRID_W }).map((__, x) => {
             const index = toIndex(x, y);
-            const isUnlocked = unlocked.includes(index);
+            const activePaintPreview = mode === "unlock" ? paintPreview : null;
+            const isPaintPreviewed = activePaintPreview?.indices.has(index) ?? false;
+            const isUnlocked = isPaintPreviewed
+              ? activePaintPreview?.makeUnlocked ?? unlocked.includes(index)
+              : unlocked.includes(index);
             const isHero = isHeroCell(x, y, heroAnchor);
             const isInteractive = mode === "unlock";
             const occupiedEntries = occupiedByIndex.get(index) ?? [];
@@ -348,6 +473,10 @@ export const Board = ({
                     return;
                   }
 
+                  if (mode === "unlock") {
+                    return;
+                  }
+
                   if (isHero) {
                     select(null);
                     return;
@@ -359,10 +488,29 @@ export const Board = ({
                   }
 
                   select(null);
-                  toggleUnlocked(index);
                 }}
                 onPointerDown={(event) => {
-                  if (isHero && event.button === 0) {
+                  if (mode === "unlock" && event.button === 0) {
+                    if (isHero) {
+                      return;
+                    }
+
+                    select(null);
+                    const makeUnlocked = !isUnlocked;
+                    paintSessionRef.current = {
+                      pointerId: event.pointerId,
+                      makeUnlocked,
+                      visitedIndices: new Set<number>(),
+                      appliedIndices: new Set<number>(),
+                      hasShownOccupiedLockMessage: false,
+                    };
+                    setPaintPreview({ makeUnlocked, indices: new Set<number>() });
+                    gridRef.current?.setPointerCapture(event.pointerId);
+                    applyPaintAtIndex(index);
+                    return;
+                  }
+
+                  if (mode === "build" && isHero && event.button === 0) {
                     startHeroDragWithThreshold(
                       {
                         x: x - heroAnchor.x,
@@ -389,7 +537,7 @@ export const Board = ({
                 }}
                 aria-label={getCellLabel(x, y, isHero, isUnlocked, topTile)}
                 aria-pressed={isInteractive ? isUnlocked : undefined}
-                aria-disabled={!isInteractive}
+                data-cell-index={index}
                 className={`${baseClasses} ${stateClasses} ${heroClasses} ${selectedClasses} ${issueClasses} ${dragClasses} ${heroDragClasses} ${hoverClasses}`}
               >
                 {hasTile ? (

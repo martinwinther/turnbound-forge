@@ -54,3 +54,7 @@ export const getStartUnlockedIndices = (): number[] => {
   }
   return indices;
 };
+
+export const getStartUnlockedSet = (): Set<number> => {
+  return new Set(getStartUnlockedIndices());
+};

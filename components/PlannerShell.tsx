@@ -7,7 +7,7 @@ import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
-import { getHeroCells, GRID_H, GRID_W } from "@/lib/grid";
+import { getHeroCells, getStartUnlockedSet, GRID_H, GRID_W } from "@/lib/grid";
 import type { Cell } from "@/lib/polyomino";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
@@ -58,6 +58,7 @@ export const PlannerShell = () => {
   const setMode = useBuildStore((state) => state.setMode);
   const loadBuildState = useBuildStore((state) => state.loadBuildState);
   const getBuildState = useBuildStore((state) => state.getBuildState);
+  const batchSetUnlocked = useBuildStore((state) => state.batchSetUnlocked);
   const select = useBuildStore((state) => state.select);
   const resetUnlockedToStart = useBuildStore(
     (state) => state.resetUnlockedToStart,
@@ -534,6 +535,16 @@ export const PlannerShell = () => {
   }, [heroDragPreview]);
 
   const renderedHeroAnchor = heroDragPreview?.anchor ?? heroAnchor;
+  const startUnlockedSet = useMemo(() => getStartUnlockedSet(), []);
+  const unlockedCount = unlocked.length;
+  const coinsSpent = useMemo(() => {
+    return unlocked.reduce((count, index) => {
+      if (startUnlockedSet.has(index)) {
+        return count;
+      }
+      return count + 1;
+    }, 0);
+  }, [startUnlockedSet, unlocked]);
 
   const handleAddTrinket = (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => {
     const item = trinketsById[itemId];
@@ -589,6 +600,8 @@ export const PlannerShell = () => {
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <span className={keyHintClass}>{`Unlocked: ${unlockedCount} / 49`}</span>
+            <span className={keyHintClass}>{`Coins spent: ${coinsSpent}`}</span>
             <button
               type="button"
               onClick={undo}
@@ -636,8 +649,9 @@ export const PlannerShell = () => {
           </div>
         </header>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2 text-xs text-zinc-300">
-          Locked cells are not usable until unlocked (warning only). Rotate while
-          dragging: ← / → or mouse wheel. Also: R / Shift+R.
+          {isUnlockMode
+            ? "Paint to unlock/lock. First cell decides mode."
+            : "Locked cells are not usable until unlocked (warning only). Rotate while dragging: ← / → or mouse wheel. Also: R / Shift+R."}
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_360px]">
@@ -661,9 +675,16 @@ export const PlannerShell = () => {
           </aside>
           <div className="flex justify-center lg:justify-start xl:justify-center">
             <Board
+              mode={mode}
               heroAnchor={renderedHeroAnchor}
               issues={validation.issues}
               onBoardRect={handleBoardRect}
+              onPaintToggle={(indices, makeUnlocked) => {
+                batchSetUnlocked(indices, makeUnlocked);
+              }}
+              onUnlockStatus={(message) => {
+                showLinkFeedback(message);
+              }}
               canDragPlaced={mode === "build"}
               hiddenInstanceId={draggedPlacedInstanceId}
               heroDragTone={isDraggingHero ? heroDragPreview?.tone ?? "invalid" : null}

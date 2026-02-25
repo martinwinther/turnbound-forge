@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
-import { getStartUnlockedIndices, HERO_ANCHOR } from "@/lib/grid";
+import {
+  getHeroIndices,
+  getStartUnlockedIndices,
+  HERO_ANCHOR,
+} from "@/lib/grid";
 import type { BuildStateV1, Item, Rotation } from "@/lib/types";
 
 type BuildMode = "build" | "unlock";
@@ -37,6 +41,8 @@ type BuildState = {
   canRedo: () => boolean;
   clearHistory: () => void;
   toggleUnlocked: (index: number) => void;
+  setUnlocked: (index: number, value: boolean) => void;
+  batchSetUnlocked: (indices: number[], value: boolean) => void;
   resetUnlockedToStart: () => void;
   setHeroAnchor: (x: number, y: number) => void;
   addPlaced: (itemId: string, x: number, y: number, rot?: Rotation) => void;
@@ -53,6 +59,7 @@ type BuildState = {
 };
 
 const startUnlocked = getStartUnlockedIndices();
+const heroIndices = new Set(getHeroIndices());
 const rotations: Rotation[] = [0, 90, 180, 270];
 const DEFAULT_HISTORY_LIMIT = 100;
 
@@ -200,6 +207,27 @@ const clampHistory = (history: Snapshot[], historyLimit: number): Snapshot[] => 
   return history.slice(history.length - historyLimit);
 };
 
+const setUnlockedValue = (
+  unlocked: number[],
+  index: number,
+  value: boolean,
+): number[] => {
+  if (heroIndices.has(index)) {
+    return unlocked;
+  }
+
+  const hasIndex = unlocked.includes(index);
+  if (hasIndex === value) {
+    return unlocked;
+  }
+
+  if (value) {
+    return [...unlocked, index];
+  }
+
+  return unlocked.filter((entry) => entry !== index);
+};
+
 const commitSnapshotChange = (
   state: BuildState,
   nextSource: SnapshotSource,
@@ -296,11 +324,39 @@ export const useBuildStore = create<BuildState>((set, get) => ({
     if (get().mode !== "unlock") {
       return;
     }
+    const isUnlocked = get().unlocked.includes(index);
+    get().setUnlocked(index, !isUnlocked);
+  },
+  setUnlocked: (index, value) => {
+    if (get().mode !== "unlock") {
+      return;
+    }
+
     set((state) => {
-      const isUnlocked = state.unlocked.includes(index);
-      const nextUnlocked = isUnlocked
-        ? state.unlocked.filter((value) => value !== index)
-        : [...state.unlocked, index];
+      const nextUnlocked = setUnlockedValue(state.unlocked, index, value);
+
+      return commitSnapshotChange(
+        state,
+        {
+          heroAnchor: state.heroAnchor,
+          unlocked: nextUnlocked,
+          placed: state.placed,
+          trinkets: state.trinkets,
+        },
+        state.selectedInstanceId,
+      );
+    });
+  },
+  batchSetUnlocked: (indices, value) => {
+    if (get().mode !== "unlock") {
+      return;
+    }
+
+    set((state) => {
+      let nextUnlocked = state.unlocked;
+      for (const index of indices) {
+        nextUnlocked = setUnlockedValue(nextUnlocked, index, value);
+      }
 
       return commitSnapshotChange(
         state,
