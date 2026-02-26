@@ -5,13 +5,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "@/components/Board";
 import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
+import { TileContextMenu } from "@/components/TileContextMenu";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
 import { getHeroCells, getStartUnlockedSet, GRID_H, GRID_W } from "@/lib/grid";
+import { findNearestValidAnchor } from "@/lib/placement";
 import type { Cell } from "@/lib/polyomino";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
-import type { BuildStateV1 } from "@/lib/types";
+import type { BuildStateV1, Rotation } from "@/lib/types";
 import { useDragSession } from "@/lib/useDragSession";
 import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
@@ -27,6 +29,14 @@ const itemsByIdAll = { ...itemsById, ...trinketsById };
 const interactiveTextSelector =
   "input, textarea, select, [contenteditable='true'], [role='textbox']";
 const DEFAULT_POINTER = { x: 0, y: 0 };
+const menuActionRotations: Rotation[] = [0, 90, 180, 270];
+
+type TileContextMenuState = {
+  open: boolean;
+  x: number;
+  y: number;
+  instanceId: string | null;
+};
 
 const isTypingTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) {
@@ -46,6 +56,12 @@ export const PlannerShell = () => {
   );
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
   const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
+  const [tileContextMenu, setTileContextMenu] = useState<TileContextMenuState>({
+    open: false,
+    x: 0,
+    y: 0,
+    instanceId: null,
+  });
   const feedbackTimeoutRef = useRef<number | null>(null);
   const didLoadFromUrlRef = useRef(false);
 
@@ -155,6 +171,12 @@ export const PlannerShell = () => {
     isDragging && dragKind === "placed" ? dragInstanceId : null;
   const dragItem = dragItemId ? itemsById[dragItemId] : null;
   const isDraggingHero = isDragging && dragKind === "hero";
+  const selectedTile = selectedInstanceId
+    ? placed.find((tile) => tile.instanceId === selectedInstanceId) ?? null
+    : null;
+  const closeTileContextMenu = useCallback(() => {
+    setTileContextMenu({ open: false, x: 0, y: 0, instanceId: null });
+  }, []);
 
   useEffect(() => {
     if (!isDragging) {
@@ -197,7 +219,7 @@ export const PlannerShell = () => {
     setAnchor(nextAnchor);
   }, [boardRect, dragGrabOffset, dragKind, isDragging, pointer, setAnchor]);
 
-  const showLinkFeedback = (message: string) => {
+  const showLinkFeedback = useCallback((message: string) => {
     setLinkFeedback(message);
     if (feedbackTimeoutRef.current !== null) {
       window.clearTimeout(feedbackTimeoutRef.current);
@@ -206,7 +228,7 @@ export const PlannerShell = () => {
       setLinkFeedback(null);
       feedbackTimeoutRef.current = null;
     }, 1500);
-  };
+  }, []);
 
   const handleCopyShareLink = async () => {
     try {
@@ -281,6 +303,7 @@ export const PlannerShell = () => {
       if (key === "escape") {
         event.preventDefault();
         select(null);
+        closeTileContextMenu();
         return;
       }
 
@@ -304,6 +327,7 @@ export const PlannerShell = () => {
     selectedInstanceId,
     setMode,
     undo,
+    closeTileContextMenu,
   ]);
 
   useEffect(() => {
@@ -330,7 +354,7 @@ export const PlannerShell = () => {
     window.setTimeout(() => {
       showLinkFeedback("Loaded build from link");
     }, 0);
-  }, [loadBuildState]);
+  }, [loadBuildState, showLinkFeedback]);
 
   useEffect(() => {
     return () => {
@@ -562,6 +586,54 @@ export const PlannerShell = () => {
     setBoardRect(rect);
   }, []);
 
+  const rotatePlacedByDirection = useCallback(
+    (instanceId: string, direction: "cw" | "ccw") => {
+      const tile = placed.find((entry) => entry.instanceId === instanceId);
+      if (!tile) {
+        return;
+      }
+
+      const index = menuActionRotations.indexOf(tile.rot);
+      const offset = direction === "cw" ? 1 : -1;
+      const nextRotation =
+        menuActionRotations[(index + offset + menuActionRotations.length) % menuActionRotations.length];
+      setPlacedRotation(instanceId, nextRotation);
+      select(instanceId);
+    },
+    [placed, select, setPlacedRotation],
+  );
+
+  const duplicatePlacedByInstance = useCallback(
+    (instanceId: string) => {
+      const tile = placed.find((entry) => entry.instanceId === instanceId);
+      if (!tile) {
+        return;
+      }
+      const item = itemsById[tile.itemId];
+      if (!item) {
+        showLinkFeedback("Item data missing");
+        return;
+      }
+
+      const buildState = getBuildState();
+      const nearestAnchor = findNearestValidAnchor({
+        start: { x: tile.x + 1, y: tile.y },
+        item,
+        rot: tile.rot,
+        state: buildState,
+        itemsById: itemsByIdAll,
+      });
+
+      if (!nearestAnchor) {
+        showLinkFeedback("No space to duplicate");
+        return;
+      }
+
+      addPlaced(item.id, nearestAnchor.x, nearestAnchor.y, tile.rot);
+    },
+    [addPlaced, getBuildState, placed, showLinkFeedback],
+  );
+
   return (
     <div
       className={`px-4 py-6 sm:px-6 sm:py-8 ${
@@ -697,6 +769,10 @@ export const PlannerShell = () => {
                 }
                 startPlacedDrag(instanceId, event, grabbedCell);
               }}
+              onTileContextMenu={({ instanceId, x, y }) => {
+                select(instanceId);
+                setTileContextMenu({ open: true, x, y, instanceId });
+              }}
               dragPreview={
                 dragPreview
                   ? {
@@ -723,10 +799,58 @@ export const PlannerShell = () => {
               validation={validation}
               placedCount={placed.length}
               onSelectInstance={select}
+              onDuplicateSelected={() => {
+                if (!selectedTile) {
+                  return;
+                }
+                duplicatePlacedByInstance(selectedTile.instanceId);
+              }}
+              onOpenSelectedTileMenu={(anchorRect) => {
+                if (!selectedTile) {
+                  return;
+                }
+                setTileContextMenu({
+                  open: true,
+                  x: anchorRect.right + 6,
+                  y: anchorRect.bottom + 6,
+                  instanceId: selectedTile.instanceId,
+                });
+              }}
             />
           </aside>
         </div>
       </div>
+      <TileContextMenu
+        open={tileContextMenu.open}
+        x={tileContextMenu.x}
+        y={tileContextMenu.y}
+        onClose={closeTileContextMenu}
+        onRotateCw={() => {
+          if (!tileContextMenu.instanceId) {
+            return;
+          }
+          rotatePlacedByDirection(tileContextMenu.instanceId, "cw");
+        }}
+        onRotateCcw={() => {
+          if (!tileContextMenu.instanceId) {
+            return;
+          }
+          rotatePlacedByDirection(tileContextMenu.instanceId, "ccw");
+        }}
+        onDuplicate={() => {
+          if (!tileContextMenu.instanceId) {
+            return;
+          }
+          duplicatePlacedByInstance(tileContextMenu.instanceId);
+        }}
+        onRemove={() => {
+          if (!tileContextMenu.instanceId) {
+            return;
+          }
+          removePlaced(tileContextMenu.instanceId);
+          select(null);
+        }}
+      />
       {isDragging && dragItem ? (
         <div
           className="pointer-events-none fixed z-50 rounded-md border border-zinc-700 bg-zinc-900/95 px-2 py-1 text-xs font-semibold text-zinc-100 shadow-[0_8px_20px_rgba(0,0,0,0.45)]"

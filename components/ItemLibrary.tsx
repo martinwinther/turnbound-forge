@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { items } from "@/lib/data";
 import type { Item, ItemCategory } from "@/lib/types";
 import { ITEM_CATEGORIES } from "@/lib/types";
+import { ItemTooltip } from "@/components/ItemTooltip";
 import { ShapePreview } from "@/components/ShapePreview";
 
 const TAG_SNIPPET_COUNT = 3;
@@ -55,12 +56,32 @@ export function ItemLibrary({
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ItemCategory | "all">("all");
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [supportsHover, setSupportsHover] = useState(true);
+  const [tooltipItem, setTooltipItem] = useState<Item | null>(null);
+  const [tooltipAnchorRect, setTooltipAnchorRect] = useState<DOMRect | null>(null);
+  const [isTooltipPinned, setIsTooltipPinned] = useState(false);
 
   const availableTags = useMemo(() => getAllTags(items), []);
   const filteredItems = useMemo(
     () => filterItems(items, search, category, selectedTags),
     [search, category, selectedTags],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => {
+      setSupportsHover(media.matches);
+      if (media.matches) {
+        setIsTooltipPinned(false);
+      }
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => {
@@ -145,6 +166,20 @@ export function ItemLibrary({
               <li key={item.id}>
                 <button
                   type="button"
+                  onMouseEnter={(event) => {
+                    if (!supportsHover || isTooltipPinned) {
+                      return;
+                    }
+                    setTooltipItem(item);
+                    setTooltipAnchorRect(event.currentTarget.getBoundingClientRect());
+                  }}
+                  onMouseLeave={() => {
+                    if (!supportsHover || isTooltipPinned) {
+                      return;
+                    }
+                    setTooltipItem(null);
+                    setTooltipAnchorRect(null);
+                  }}
                   onPointerDown={(event) => {
                     const element = event.currentTarget;
                     element.dataset.dragStartX = String(event.clientX);
@@ -183,6 +218,11 @@ export function ItemLibrary({
                       return;
                     }
                     onPick?.(item.id);
+                    if (!supportsHover) {
+                      setTooltipItem(item);
+                      setTooltipAnchorRect(event.currentTarget.getBoundingClientRect());
+                      setIsTooltipPinned(true);
+                    }
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -229,6 +269,22 @@ export function ItemLibrary({
           </p>
         )}
       </div>
+      {tooltipItem ? (
+        <ItemTooltip
+          item={tooltipItem}
+          open
+          anchorRect={tooltipAnchorRect}
+          onClose={
+            !supportsHover || isTooltipPinned
+              ? () => {
+                  setTooltipItem(null);
+                  setTooltipAnchorRect(null);
+                  setIsTooltipPinned(false);
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </div>
   );
 }

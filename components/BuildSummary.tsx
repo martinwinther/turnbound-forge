@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+
+import { ItemTooltip } from "@/components/ItemTooltip";
 import { itemsById } from "@/lib/data";
 import type { ValidationResult } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
@@ -8,12 +11,16 @@ type BuildSummaryProps = {
   validation: ValidationResult;
   placedCount: number;
   onSelectInstance: (instanceId: string) => void;
+  onDuplicateSelected: () => void;
+  onOpenSelectedTileMenu: (anchorRect: DOMRect) => void;
 };
 
 export const BuildSummary = ({
   validation,
   placedCount,
   onSelectInstance,
+  onDuplicateSelected,
+  onOpenSelectedTileMenu,
 }: BuildSummaryProps) => {
   const { issues, illegal, weaponCap, weaponCount } = validation;
   const errors = issues.filter((i) => i.level === "error");
@@ -23,6 +30,7 @@ export const BuildSummary = ({
   const rotateSelected = useBuildStore((state) => state.rotateSelected);
   const removePlaced = useBuildStore((state) => state.removePlaced);
   const select = useBuildStore((state) => state.select);
+  const [selectedInfoAnchorRect, setSelectedInfoAnchorRect] = useState<DOMRect | null>(null);
 
   const selectedTile = selectedInstanceId
     ? placed.find((tile) => tile.instanceId === selectedInstanceId) ?? null
@@ -75,6 +83,28 @@ export const BuildSummary = ({
             <div className="text-xs text-zinc-300">
               Rotation: <span className="font-medium">{selectedTile.rot}deg</span>
             </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={(event) => {
+                  setSelectedInfoAnchorRect(event.currentTarget.getBoundingClientRect());
+                }}
+                className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:border-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                aria-label="Show selected tile details"
+              >
+                Info
+              </button>
+              <button
+                type="button"
+                onClick={(event) =>
+                  onOpenSelectedTileMenu(event.currentTarget.getBoundingClientRect())
+                }
+                className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:border-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                aria-label="Open tile actions menu"
+              >
+                ⋯
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2 pt-1">
               <button
                 type="button"
@@ -92,6 +122,13 @@ export const BuildSummary = ({
               </button>
               <button
                 type="button"
+                onClick={onDuplicateSelected}
+                className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-xs font-semibold text-zinc-200 transition hover:border-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+              >
+                Duplicate
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   removePlaced(selectedTile.instanceId);
                   select(null);
@@ -101,6 +138,12 @@ export const BuildSummary = ({
                 Remove
               </button>
             </div>
+            <ItemTooltip
+              item={selectedItem}
+              open={selectedInfoAnchorRect != null}
+              anchorRect={selectedInfoAnchorRect}
+              onClose={() => setSelectedInfoAnchorRect(null)}
+            />
           </div>
         ) : (
           <p className="mt-2 text-xs text-zinc-500">Select a tile on the board.</p>

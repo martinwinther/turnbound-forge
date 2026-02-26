@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ItemTooltip } from "@/components/ItemTooltip";
 import { itemsById } from "@/lib/data";
 import { fromIndex, GRID_H, GRID_W, isHeroCell, toIndex } from "@/lib/grid";
 import { getOccupiedCells } from "@/lib/polyomino";
 import { useBuildStore } from "@/store/useBuildStore";
 import type { Cell } from "@/lib/polyomino";
-import type { Rotation } from "@/lib/types";
+import type { Item, Rotation } from "@/lib/types";
 import type { ValidationIssue } from "@/lib/validate";
 
 const getCellLabel = (
@@ -64,6 +65,7 @@ type BoardProps = {
     grabbedCell: { x: number; y: number },
     event: PointerEvent,
   ) => void;
+  onTileContextMenu?: (args: { instanceId: string; x: number; y: number }) => void;
 };
 
 const DRAG_THRESHOLD_PX = 6;
@@ -81,6 +83,7 @@ export const Board = ({
   heroDragTone = null,
   onHeroDragStart,
   onPlacedDragStart,
+  onTileContextMenu,
 }: BoardProps) => {
   const unlocked = useBuildStore((state) => state.unlocked);
   const placed = useBuildStore((state) => state.placed);
@@ -92,6 +95,9 @@ export const Board = ({
     makeUnlocked: boolean;
     indices: Set<number>;
   } | null>(null);
+  const [supportsHover, setSupportsHover] = useState(true);
+  const [hoveredItem, setHoveredItem] = useState<Item | null>(null);
+  const [hoveredAnchorRect, setHoveredAnchorRect] = useState<DOMRect | null>(null);
   const paintSessionRef = useRef<{
     pointerId: number;
     makeUnlocked: boolean;
@@ -99,6 +105,17 @@ export const Board = ({
     appliedIndices: Set<number>;
     hasShownOccupiedLockMessage: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => setSupportsHover(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     if (!onBoardRect || !gridRef.current) {
@@ -148,7 +165,13 @@ export const Board = ({
   const occupiedByIndex = useMemo(() => {
     const byIndex = new Map<
       number,
-      Array<{ instanceId: string; itemName: string; isAnchor: boolean; isSelected: boolean }>
+      Array<{
+        instanceId: string;
+        itemId: string;
+        itemName: string;
+        isAnchor: boolean;
+        isSelected: boolean;
+      }>
     >();
 
     for (const tile of placed) {
@@ -184,6 +207,7 @@ export const Board = ({
         const index = toIndex(cell.x, cell.y);
         const entry = {
           instanceId: tile.instanceId,
+          itemId: item.id,
           itemName: item.name || item.id,
           isAnchor: cell.x === tile.x && cell.y === tile.y,
           isSelected: tile.instanceId === selectedInstanceId,
@@ -489,6 +513,36 @@ export const Board = ({
 
                   select(null);
                 }}
+                onMouseEnter={(event) => {
+                  if (!supportsHover || !topTile) {
+                    return;
+                  }
+                  const item = itemsById[topTile.itemId];
+                  if (!item) {
+                    return;
+                  }
+                  setHoveredItem(item);
+                  setHoveredAnchorRect(event.currentTarget.getBoundingClientRect());
+                }}
+                onMouseLeave={() => {
+                  if (!supportsHover) {
+                    return;
+                  }
+                  setHoveredItem(null);
+                  setHoveredAnchorRect(null);
+                }}
+                onContextMenu={(event) => {
+                  if (!topTile || mode !== "build") {
+                    return;
+                  }
+                  event.preventDefault();
+                  select(topTile.instanceId);
+                  onTileContextMenu?.({
+                    instanceId: topTile.instanceId,
+                    x: event.clientX,
+                    y: event.clientY,
+                  });
+                }}
                 onPointerDown={(event) => {
                   if (mode === "unlock" && event.button === 0) {
                     if (isHero) {
@@ -581,6 +635,13 @@ export const Board = ({
           </span>
         </div>
       </div>
+      {hoveredItem ? (
+        <ItemTooltip
+          item={hoveredItem}
+          open
+          anchorRect={hoveredAnchorRect}
+        />
+      ) : null}
       <div className="mt-3 text-xs text-zinc-400">
         Mode: <span className="font-semibold capitalize text-zinc-200">{mode}</span>
       </div>
