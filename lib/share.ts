@@ -3,6 +3,12 @@ import type { BuildStateV1, Rotation } from "@/lib/types";
 export const BUILD_PARAM = "b";
 
 export type SharePayloadV1 = BuildStateV1;
+export type ExportFileV1 = {
+  app: "turnbound-forge";
+  v: 1;
+  createdAt: string;
+  state: BuildStateV1;
+};
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -100,7 +106,7 @@ const isTrinketEntry = (
   );
 };
 
-const isBuildStateV1 = (value: unknown): value is BuildStateV1 => {
+export const validateBuildStateShape = (value: unknown): value is BuildStateV1 => {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -149,6 +155,23 @@ const isBuildStateV1 = (value: unknown): value is BuildStateV1 => {
   return true;
 };
 
+const isExportFileV1 = (value: unknown): value is ExportFileV1 => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.app !== "turnbound-forge" ||
+    candidate.v !== 1 ||
+    typeof candidate.createdAt !== "string"
+  ) {
+    return false;
+  }
+
+  return validateBuildStateShape(candidate.state);
+};
+
 export const encodeBuildToString = (state: BuildStateV1): string => {
   return base64UrlEncode(JSON.stringify(state));
 };
@@ -157,7 +180,16 @@ export const decodeBuildFromString = (value: string): BuildStateV1 | null => {
   try {
     const decoded = base64UrlDecode(value);
     const parsed: unknown = JSON.parse(decoded);
-    return isBuildStateV1(parsed) ? parsed : null;
+    return validateBuildStateShape(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+export const decodeExportFileFromJson = (value: string): ExportFileV1 | null => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isExportFileV1(parsed) ? parsed : null;
   } catch {
     return null;
   }

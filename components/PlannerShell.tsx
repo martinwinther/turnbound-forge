@@ -12,7 +12,13 @@ import { getHeroCells, getStartUnlockedSet, GRID_H, GRID_W } from "@/lib/grid";
 import { findNearestValidAnchor } from "@/lib/placement";
 import type { Cell } from "@/lib/polyomino";
 import { getOccupiedCells } from "@/lib/polyomino";
-import { BUILD_PARAM, decodeBuildFromString, encodeBuildToString } from "@/lib/share";
+import {
+  BUILD_PARAM,
+  decodeBuildFromString,
+  decodeExportFileFromJson,
+  encodeBuildToString,
+  type ExportFileV1,
+} from "@/lib/share";
 import type { BuildStateV1, Rotation } from "@/lib/types";
 import { useDragSession } from "@/lib/useDragSession";
 import { validateBuild } from "@/lib/validate";
@@ -30,6 +36,13 @@ const interactiveTextSelector =
   "input, textarea, select, [contenteditable='true'], [role='textbox']";
 const DEFAULT_POINTER = { x: 0, y: 0 };
 const menuActionRotations: Rotation[] = [0, 90, 180, 270];
+
+const formatExportTimestamp = (date: Date): string => {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(
+    date.getHours(),
+  )}${pad(date.getMinutes())}`;
+};
 
 type TileContextMenuState = {
   open: boolean;
@@ -55,6 +68,7 @@ export const PlannerShell = () => {
     items[0]?.id ?? null,
   );
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
+  const [isScreenshotMode, setIsScreenshotMode] = useState(false);
   const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
   const [tileContextMenu, setTileContextMenu] = useState<TileContextMenuState>({
     open: false,
@@ -64,6 +78,7 @@ export const PlannerShell = () => {
   });
   const feedbackTimeoutRef = useRef<number | null>(null);
   const didLoadFromUrlRef = useRef(false);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const mode = useBuildStore((state) => state.mode);
   const unlocked = useBuildStore((state) => state.unlocked);
@@ -245,6 +260,57 @@ export const PlannerShell = () => {
       showLinkFeedback("Copy failed");
     }
   };
+
+  const handleExportJson = useCallback(() => {
+    try {
+      const state = getBuildState();
+      const exportFile: ExportFileV1 = {
+        app: "turnbound-forge",
+        v: 1,
+        createdAt: new Date().toISOString(),
+        state,
+      };
+      const json = JSON.stringify(exportFile, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = `turnbound-forge-build-${formatExportTimestamp(new Date())}.json`;
+      anchor.click();
+      URL.revokeObjectURL(downloadUrl);
+      showLinkFeedback("Exported build");
+    } catch {
+      showLinkFeedback("Export failed");
+    }
+  }, [getBuildState, showLinkFeedback]);
+
+  const handleImportJsonClick = useCallback(() => {
+    importFileInputRef.current?.click();
+  }, []);
+
+  const handleImportJson = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const [file] = Array.from(event.currentTarget.files ?? []);
+      event.currentTarget.value = "";
+      if (!file) {
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        const decodedExport = decodeExportFileFromJson(text);
+        if (!decodedExport) {
+          showLinkFeedback("Invalid build file");
+          return;
+        }
+        loadBuildState(decodedExport.state);
+        showLinkFeedback("Imported build");
+      } catch {
+        showLinkFeedback("Invalid build file");
+      }
+    },
+    [loadBuildState, showLinkFeedback],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -640,7 +706,11 @@ export const PlannerShell = () => {
         isDragging ? "cursor-grabbing select-none" : ""
       }`}
     >
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5">
+      <div
+        className={`mx-auto flex w-full flex-col gap-5 ${
+          isScreenshotMode ? "max-w-[1680px]" : "max-w-[1440px]"
+        }`}
+      >
         <header className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 shadow-[0_12px_28px_rgba(0,0,0,0.28)] lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -701,10 +771,43 @@ export const PlannerShell = () => {
             </button>
             <button
               type="button"
+              onClick={handleExportJson}
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
+            >
+              Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={handleImportJsonClick}
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
+            >
+              Import JSON
+            </button>
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept="application/json"
+              className="sr-only"
+              onChange={handleImportJson}
+            />
+            <button
+              type="button"
               onClick={resetUnlockedToStart}
               className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
             >
               Reset start mask
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsScreenshotMode((value) => !value)}
+              aria-pressed={isScreenshotMode}
+              className={`${actionButtonBase} ${
+                isScreenshotMode
+                  ? "border-sky-500/70 bg-sky-600/25 text-sky-100"
+                  : "border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500"
+              }`}
+            >
+              Screenshot Mode
             </button>
             <span className={keyHintClass}>Drag rotate: ← / → or wheel</span>
             <span className={keyHintClass}>Also: R / Shift+R</span>
@@ -720,32 +823,40 @@ export const PlannerShell = () => {
             ) : null}
           </div>
         </header>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2 text-xs text-zinc-300">
-          {isUnlockMode
-            ? "Paint to unlock/lock. First cell decides mode."
-            : "Locked cells are not usable until unlocked (warning only). Rotate while dragging: ← / → or mouse wheel. Also: R / Shift+R."}
-        </div>
+        {!isScreenshotMode ? (
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2 text-xs text-zinc-300">
+            {isUnlockMode
+              ? "Paint to unlock/lock. First cell decides mode."
+              : "Locked cells are not usable until unlocked (warning only). Rotate while dragging: ← / → or mouse wheel. Also: R / Shift+R."}
+          </div>
+        ) : null}
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_360px]">
-          <aside className="flex min-h-[320px] flex-col rounded-xl border border-zinc-800 bg-zinc-900/80 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.28)]">
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-200">
-              Item Library
-            </h2>
-            <p className="mb-3 text-xs text-zinc-400">Drag items onto the board.</p>
-            <ItemLibrary
-              onPick={setPickedItemId}
-              onDragStart={(itemId, event) => {
-                if (mode !== "build") {
-                  return;
-                }
-                setPickedItemId(itemId);
-                startLibraryDrag(itemId, event);
-              }}
-              selectedItemId={pickedItemId}
-              mode="full"
-            />
-          </aside>
-          <div className="flex justify-center lg:justify-start xl:justify-center">
+        <div
+          className={`grid grid-cols-1 gap-6 ${
+            isScreenshotMode ? "xl:grid-cols-[1fr_360px]" : "lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_360px]"
+          }`}
+        >
+          {!isScreenshotMode ? (
+            <aside className="flex min-h-[320px] flex-col rounded-xl border border-zinc-800 bg-zinc-900/80 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.28)]">
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-200">
+                Item Library
+              </h2>
+              <p className="mb-3 text-xs text-zinc-400">Drag items onto the board.</p>
+              <ItemLibrary
+                onPick={setPickedItemId}
+                onDragStart={(itemId, event) => {
+                  if (mode !== "build") {
+                    return;
+                  }
+                  setPickedItemId(itemId);
+                  startLibraryDrag(itemId, event);
+                }}
+                selectedItemId={pickedItemId}
+                mode="full"
+              />
+            </aside>
+          ) : null}
+          <div className="flex justify-center">
             <Board
               mode={mode}
               heroAnchor={renderedHeroAnchor}
@@ -788,7 +899,11 @@ export const PlannerShell = () => {
               }
             />
           </div>
-          <aside className="flex min-w-[280px] flex-col gap-4 lg:col-span-2 xl:col-span-1">
+          <aside
+            className={`flex min-w-[280px] flex-col gap-4 ${
+              isScreenshotMode ? "" : "lg:col-span-2 xl:col-span-1"
+            }`}
+          >
             <TrinketSlots
               trinkets={trinkets}
               onAdd={handleAddTrinket}
@@ -819,6 +934,11 @@ export const PlannerShell = () => {
             />
           </aside>
         </div>
+        {isScreenshotMode ? (
+          <div className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+            Turnbound Forge
+          </div>
+        ) : null}
       </div>
       <TileContextMenu
         open={tileContextMenu.open}
