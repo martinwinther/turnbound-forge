@@ -1,0 +1,8 @@
+id,name,category,tags,rulesText,shapeCells,pivot,rotatable,isUnique,icon,isHalfTrinket,weaponCapBonus
+hero-ember,Ember,hero,starter;fire,"Hero start tile for demo builds.","0 0;1 0;0 1;1 1","0 0",false,true,/icons/placeholder.png,false,
+weapon-arcblade,Arcblade,weapon,melee;lightning,"Basic weapon to test weapon cap rules.","0 0;1 0;2 0;2 1","1 0",true,false,/icons/placeholder.png,false,
+armor-bastion-plate,Bastion Plate,armor,taunt;defense,"Taunt armor with a bulky footprint.","0 0;0 1;1 1;2 1","0 1",true,false,/icons/placeholder.png,false,
+accessory-auric-charm,Auric Charm,accessory,aura;support,"Accessory with a simple L shape.","0 0;1 0;1 1","0 0",true,false,/icons/placeholder.png,false,
+consumable-repair-kit,Repair Kit,consumable,utility,"Small consumable for quick tests.","0 0;0 1","0 0",true,false,/icons/placeholder.png,false,
+trinket-weapon-signet,Weapon Signet,trinket,weapon-cap;offense,"Trinket that increases weapon cap by 1.","0 0;1 0","0 0",true,false,/icons/placeholder.png,false,1
+trinket-half-ember-charm,Half Ember Charm,trinket,half;starter,"Half-size trinket used to test half-slot behavior.","0 0","0 0",true,true,/icons/placeholder.png,true,

@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "gen:items": "node scripts/generate-items.mjs",
+    "check:data": "npm run gen:items -- --check"
   },
   "dependencies": {
     "next": "16.1.6",
