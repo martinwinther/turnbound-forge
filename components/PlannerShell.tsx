@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Board } from "@/components/Board";
+import { BuildGallery } from "@/components/BuildGallery";
 import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
 import { TileContextMenu } from "@/components/TileContextMenu";
@@ -19,6 +20,11 @@ import {
   encodeBuildToString,
   type ExportFileV1,
 } from "@/lib/share";
+import {
+  loadSavedBuilds,
+  upsertBuild,
+  type SavedBuildV1,
+} from "@/lib/storage";
 import type { BuildStateV1, Rotation } from "@/lib/types";
 import { useDragSession } from "@/lib/useDragSession";
 import { validateBuild } from "@/lib/validate";
@@ -63,12 +69,26 @@ const isTypingTarget = (target: EventTarget | null) => {
   return Boolean(target.closest(interactiveTextSelector));
 };
 
+const createSavedBuildId = (): string => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `build-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 export const PlannerShell = () => {
   const [pickedItemId, setPickedItemId] = useState<string | null>(
     items[0]?.id ?? null,
   );
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
   const [isScreenshotMode, setIsScreenshotMode] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [currentSavedBuildId, setCurrentSavedBuildId] = useState<string | null>(
+    null,
+  );
+  const [currentSavedBuildName, setCurrentSavedBuildName] = useState<
+    string | null
+  >(null);
   const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
   const [tileContextMenu, setTileContextMenu] = useState<TileContextMenuState>({
     open: false,
@@ -310,6 +330,98 @@ export const PlannerShell = () => {
       }
     },
     [loadBuildState, showLinkFeedback],
+  );
+
+  const handleSave = useCallback(() => {
+    const state = getBuildState();
+    const now = new Date().toISOString();
+
+    if (currentSavedBuildId) {
+      const list = loadSavedBuilds();
+      const existing = list.find((b) => b.id === currentSavedBuildId);
+      if (existing) {
+        const updated: SavedBuildV1 = {
+          ...existing,
+          updatedAt: now,
+          state,
+        };
+        upsertBuild(updated);
+        setCurrentSavedBuildName(existing.name);
+        showLinkFeedback("Saved ✓");
+        return;
+      }
+    }
+
+    const rawName =
+      typeof window !== "undefined"
+        ? window.prompt("Build name", currentSavedBuildName ?? "Untitled build")
+        : null;
+    const name = (rawName?.trim() || "Untitled build") as string;
+    const build: SavedBuildV1 = {
+      id: createSavedBuildId(),
+      v: 1,
+      name,
+      createdAt: now,
+      updatedAt: now,
+      favorite: false,
+      state,
+    };
+    upsertBuild(build);
+    setCurrentSavedBuildId(build.id);
+    setCurrentSavedBuildName(build.name);
+    showLinkFeedback("Saved ✓");
+  }, [
+    currentSavedBuildId,
+    currentSavedBuildName,
+    getBuildState,
+    showLinkFeedback,
+  ]);
+
+  const handleSaveAs = useCallback(() => {
+    const state = getBuildState();
+    const now = new Date().toISOString();
+    const rawName =
+      typeof window !== "undefined"
+        ? window.prompt("Build name", currentSavedBuildName ?? "Untitled build")
+        : null;
+    const saveAsName = (rawName?.trim() || "Untitled build") as string;
+    const build: SavedBuildV1 = {
+      id: createSavedBuildId(),
+      v: 1,
+      name: saveAsName,
+      createdAt: now,
+      updatedAt: now,
+      favorite: false,
+      state,
+    };
+    upsertBuild(build);
+    setCurrentSavedBuildId(build.id);
+    setCurrentSavedBuildName(build.name);
+    showLinkFeedback("Saved ✓");
+  }, [currentSavedBuildName, getBuildState, showLinkFeedback]);
+
+  const handleGalleryLoad = useCallback(
+    (state: BuildStateV1, savedId: string) => {
+      loadBuildState(state);
+      const list = loadSavedBuilds();
+      const build = list.find((b) => b.id === savedId);
+      setCurrentSavedBuildId(savedId);
+      setCurrentSavedBuildName(build?.name ?? null);
+      setGalleryOpen(false);
+      showLinkFeedback("Loaded build");
+    },
+    [loadBuildState, showLinkFeedback],
+  );
+
+  const handleGalleryDelete = useCallback(
+    (id: string) => {
+      if (id === currentSavedBuildId) {
+        setCurrentSavedBuildId(null);
+        setCurrentSavedBuildName(null);
+      }
+      showLinkFeedback("Deleted");
+    },
+    [currentSavedBuildId, showLinkFeedback],
   );
 
   useEffect(() => {
@@ -764,6 +876,27 @@ export const PlannerShell = () => {
             </button>
             <button
               type="button"
+              onClick={handleSave}
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAs}
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
+            >
+              Save As
+            </button>
+            <button
+              type="button"
+              onClick={() => setGalleryOpen(true)}
+              className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
+            >
+              Gallery
+            </button>
+            <button
+              type="button"
               onClick={handleCopyShareLink}
               className={`${actionButtonBase} border-amber-400/70 bg-amber-500 text-zinc-950 hover:bg-amber-400`}
             >
@@ -812,6 +945,11 @@ export const PlannerShell = () => {
             <span className={keyHintClass}>Drag rotate: ← / → or wheel</span>
             <span className={keyHintClass}>Also: R / Shift+R</span>
             <span className={keyHintClass}>Del remove</span>
+            {currentSavedBuildName ? (
+              <span className="text-xs text-zinc-500">
+                Editing: {currentSavedBuildName}
+              </span>
+            ) : null}
             {linkFeedback ? (
               <span
                 role="status"
@@ -940,6 +1078,12 @@ export const PlannerShell = () => {
           </div>
         ) : null}
       </div>
+      <BuildGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onLoad={handleGalleryLoad}
+        onDelete={handleGalleryDelete}
+      />
       <TileContextMenu
         open={tileContextMenu.open}
         x={tileContextMenu.x}
