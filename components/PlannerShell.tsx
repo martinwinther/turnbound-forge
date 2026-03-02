@@ -6,6 +6,7 @@ import { Board } from "@/components/Board";
 import { BuildGallery } from "@/components/BuildGallery";
 import { BuildSummary } from "@/components/BuildSummary";
 import { ItemLibrary } from "@/components/ItemLibrary";
+import { SynergyPanel } from "@/components/SynergyPanel";
 import { TileContextMenu } from "@/components/TileContextMenu";
 import { TrinketSlots } from "@/components/TrinketSlots";
 import { items, itemsById, trinkets as allTrinkets, trinketsById } from "@/lib/data";
@@ -26,6 +27,7 @@ import {
   type SavedBuildV1,
 } from "@/lib/storage";
 import type { BuildStateV1, Rotation } from "@/lib/types";
+import { getActiveTags, rankItemsBySynergy } from "@/lib/tags";
 import { useDragSession } from "@/lib/useDragSession";
 import { validateBuild } from "@/lib/validate";
 import { useBuildStore } from "@/store/useBuildStore";
@@ -99,6 +101,8 @@ export const PlannerShell = () => {
   const feedbackTimeoutRef = useRef<number | null>(null);
   const didLoadFromUrlRef = useRef(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSynergyFilterOn, setIsSynergyFilterOn] = useState(false);
+  const [includePlacedInSynergy, setIncludePlacedInSynergy] = useState(false);
 
   const mode = useBuildStore((state) => state.mode);
   const unlocked = useBuildStore((state) => state.unlocked);
@@ -748,6 +752,46 @@ export const PlannerShell = () => {
     }, 0);
   }, [startUnlockedSet, unlocked]);
 
+  const activeTags = useMemo(
+    () =>
+      getActiveTags({
+        state: {
+          v: 1,
+          heroId: undefined,
+          heroAnchor: heroAnchor ?? undefined,
+          unlocked,
+          placed,
+          trinkets,
+        },
+        itemsById: itemsByIdAll,
+      }),
+    [heroAnchor, unlocked, placed, trinkets],
+  );
+
+  const placedItemIds = useMemo(
+    () => new Set(placed.map((tile) => tile.itemId)),
+    [placed],
+  );
+
+  const synergySuggestions = useMemo(
+    () =>
+      rankItemsBySynergy(items, activeTags, {
+        excludePlaced: !includePlacedInSynergy,
+        placedItemIds,
+      }),
+    [activeTags, includePlacedInSynergy, placedItemIds],
+  );
+
+  const itemLibraryForcedFilter = useMemo(
+    () =>
+      isSynergyFilterOn && activeTags.length > 0
+        ? {
+            anyTags: activeTags,
+          }
+        : undefined,
+    [activeTags, isSynergyFilterOn],
+  );
+
   const handleAddTrinket = (slot: 0 | 1 | 2, half: 0 | 1, itemId: string) => {
     const item = trinketsById[itemId];
     if (!item || item.category !== "trinket") {
@@ -979,7 +1023,24 @@ export const PlannerShell = () => {
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-200">
                 Item Library
               </h2>
-              <p className="mb-3 text-xs text-zinc-400">Drag items onto the board.</p>
+              <p className="mb-2 text-xs text-zinc-400">Drag items onto the board.</p>
+              <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5">
+                <label className="inline-flex items-center gap-2 text-xs text-zinc-300">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-900 text-amber-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-400"
+                    checked={isSynergyFilterOn}
+                    disabled={activeTags.length === 0}
+                    onChange={(event) => setIsSynergyFilterOn(event.target.checked)}
+                  />
+                  <span>Synergy filter</span>
+                </label>
+                <span className="text-[11px] text-zinc-500">
+                  {activeTags.length > 0
+                    ? `${activeTags.length} active tag${activeTags.length === 1 ? "" : "s"}`
+                    : "No active tags yet"}
+                </span>
+              </div>
               <ItemLibrary
                 onPick={setPickedItemId}
                 onDragStart={(itemId, event) => {
@@ -991,6 +1052,7 @@ export const PlannerShell = () => {
                 }}
                 selectedItemId={pickedItemId}
                 mode="full"
+                forcedFilter={itemLibraryForcedFilter}
               />
             </aside>
           ) : null}
@@ -1047,6 +1109,21 @@ export const PlannerShell = () => {
               onAdd={handleAddTrinket}
               onRemove={removeTrinket}
               availableTrinkets={availableTrinkets}
+            />
+            <SynergyPanel
+              activeTags={activeTags}
+              suggestions={synergySuggestions}
+              includePlaced={includePlacedInSynergy}
+              onIncludePlacedChange={setIncludePlacedInSynergy}
+              onPick={(itemId) => {
+                setPickedItemId(itemId);
+              }}
+              onFilterToSynergy={() => {
+                if (activeTags.length === 0) {
+                  return;
+                }
+                setIsSynergyFilterOn(true);
+              }}
             />
             <BuildSummary
               validation={validation}

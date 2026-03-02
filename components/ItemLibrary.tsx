@@ -14,6 +14,11 @@ type ItemLibraryProps = {
   onDragStart?: (itemId: string, event: React.PointerEvent<HTMLButtonElement>) => void;
   selectedItemId?: string | null;
   mode?: "compact" | "full";
+  forcedFilter?: {
+    requiredTags?: string[];
+    anyTags?: string[];
+    category?: ItemCategory | "all";
+  };
 };
 
 const DRAG_THRESHOLD_PX = 6;
@@ -29,8 +34,19 @@ function filterItems(
   search: string,
   category: ItemCategory | "all",
   selectedTags: Set<string>,
+  forcedFilter?: {
+    requiredTags?: string[];
+    anyTags?: string[];
+    category?: ItemCategory | "all";
+  },
 ): Item[] {
   const searchLower = search.trim().toLowerCase();
+  const forcedCategory = forcedFilter?.category ?? "all";
+  const forcedRequiredTags = forcedFilter?.requiredTags ?? [];
+  const forcedAnyTags = forcedFilter?.anyTags ?? [];
+  const forcedAnyTagSet =
+    forcedAnyTags.length > 0 ? new Set<string>(forcedAnyTags) : undefined;
+
   return itemList.filter((item) => {
     if (searchLower && !item.name.toLowerCase().includes(searchLower)) {
       return false;
@@ -38,11 +54,31 @@ function filterItems(
     if (category !== "all" && item.category !== category) {
       return false;
     }
+    if (forcedCategory !== "all" && item.category !== forcedCategory) {
+      return false;
+    }
+
     for (const tag of selectedTags) {
       if (!item.tags.includes(tag)) {
         return false;
       }
     }
+
+    if (forcedRequiredTags.length > 0) {
+      for (const tag of forcedRequiredTags) {
+        if (!item.tags.includes(tag)) {
+          return false;
+        }
+      }
+    }
+
+    if (forcedAnyTagSet && forcedAnyTagSet.size > 0) {
+      const hasAny = item.tags.some((tag) => forcedAnyTagSet.has(tag));
+      if (!hasAny) {
+        return false;
+      }
+    }
+
     return true;
   });
 }
@@ -52,6 +88,7 @@ export function ItemLibrary({
   onDragStart,
   selectedItemId = null,
   mode = "full",
+  forcedFilter,
 }: ItemLibraryProps) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ItemCategory | "all">("all");
@@ -63,8 +100,8 @@ export function ItemLibrary({
 
   const availableTags = useMemo(() => getAllTags(items), []);
   const filteredItems = useMemo(
-    () => filterItems(items, search, category, selectedTags),
-    [search, category, selectedTags],
+    () => filterItems(items, search, category, selectedTags, forcedFilter),
+    [search, category, selectedTags, forcedFilter],
   );
 
   useEffect(() => {
