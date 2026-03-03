@@ -21,6 +21,7 @@ import {
   encodeBuildToString,
   type ExportFileV1,
 } from "@/lib/share";
+import { decodeTurnboundCode } from "@/lib/turnboundCode";
 import {
   loadSavedBuilds,
   upsertBuild,
@@ -83,6 +84,13 @@ export const PlannerShell = () => {
     items[0]?.id ?? null,
   );
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
+  const [duelCodeInput, setDuelCodeInput] = useState("");
+  const [duelCodeStatus, setDuelCodeStatus] = useState<
+    { tone: "idle" | "ok" | "error"; message: string } | null
+  >(null);
+  const [duelCodeDebug, setDuelCodeDebug] = useState<unknown | null>(null);
+  const [duelCodeBusy, setDuelCodeBusy] = useState(false);
+  const isDev = process.env.NODE_ENV !== "production";
   const [isScreenshotMode, setIsScreenshotMode] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [currentSavedBuildId, setCurrentSavedBuildId] = useState<string | null>(
@@ -335,6 +343,39 @@ export const PlannerShell = () => {
     },
     [loadBuildState, showLinkFeedback],
   );
+
+  const handleDecodeDuelCode = useCallback(async () => {
+    const input = duelCodeInput;
+    if (!input.trim()) {
+      setDuelCodeStatus({ tone: "error", message: "Paste a code first." });
+      setDuelCodeDebug(null);
+      return;
+    }
+
+    setDuelCodeBusy(true);
+    setDuelCodeStatus({ tone: "idle", message: "Decoding…" });
+    setDuelCodeDebug(null);
+    try {
+      const decoded = await decodeTurnboundCode(input);
+      if (!decoded.ok) {
+        setDuelCodeStatus({ tone: "error", message: decoded.reason });
+        setDuelCodeDebug(decoded.debug ?? null);
+        return;
+      }
+
+      loadBuildState(decoded.state);
+      setDuelCodeStatus({ tone: "ok", message: "Imported from code" });
+      setDuelCodeDebug(decoded.meta ?? null);
+    } finally {
+      setDuelCodeBusy(false);
+    }
+  }, [duelCodeInput, loadBuildState]);
+
+  const handleClearDuelCode = useCallback(() => {
+    setDuelCodeInput("");
+    setDuelCodeStatus(null);
+    setDuelCodeDebug(null);
+  }, []);
 
   const handleSave = useCallback(() => {
     const state = getBuildState();
@@ -1104,6 +1145,78 @@ export const PlannerShell = () => {
               isScreenshotMode ? "" : "lg:col-span-2 xl:col-span-1"
             }`}
           >
+            <section className="rounded-xl border border-zinc-800 bg-zinc-900/80 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.28)]">
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-200">
+                Turnbound Duel Code
+              </h2>
+              <label className="block">
+                <span className="sr-only">Import Turnbound code</span>
+                <input
+                  value={duelCodeInput}
+                  onChange={(event) => setDuelCodeInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") {
+                      return;
+                    }
+                    event.preventDefault();
+                    void handleDecodeDuelCode();
+                  }}
+                  placeholder="e.g. 98YBNT"
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleDecodeDuelCode()}
+                  disabled={duelCodeBusy}
+                  className={`${actionButtonBase} border-amber-400/70 bg-amber-500 text-zinc-950 hover:bg-amber-400`}
+                >
+                  Decode
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearDuelCode}
+                  disabled={duelCodeBusy}
+                  className={`${actionButtonBase} border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500`}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="mt-2 min-h-[1.25rem] text-xs">
+                {duelCodeStatus ? (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className={
+                      duelCodeStatus.tone === "ok"
+                        ? "font-semibold text-emerald-300"
+                        : duelCodeStatus.tone === "error"
+                          ? "font-semibold text-red-300"
+                          : "font-medium text-zinc-400"
+                    }
+                  >
+                    {duelCodeStatus.message}
+                  </span>
+                ) : (
+                  <span className="text-zinc-500">Paste a code and decode.</span>
+                )}
+              </div>
+              {isDev && duelCodeDebug ? (
+                <details className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+                  <summary className="cursor-pointer select-none text-xs font-semibold text-zinc-300">
+                    Debug details
+                  </summary>
+                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-zinc-950/60 p-2 text-[11px] text-zinc-200">
+                    {JSON.stringify(duelCodeDebug, null, 2)}
+                  </pre>
+                </details>
+              ) : null}
+            </section>
             <TrinketSlots
               trinkets={trinkets}
               onAdd={handleAddTrinket}
